@@ -1,0 +1,18 @@
+{
+  "name": "skilltap",
+  "description": "Official skills for using skilltap — install and discover agent skills.",
+  "skills": [
+    {
+      "name": "skilltap",
+      "description": "Manage agent skills with the skilltap CLI — install, update, remove, and list.",
+      "repo": "nklisch/skilltap-skills",
+      "tags": ["skilltap", "cli", "skills", "package-manager"]
+    },
+    {
+      "name": "skilltap-find",
+      "description": "Discover and search for agent skills via taps and the npm registry.",
+      "repo": "nklisch/skilltap-skills",
+      "tags": ["skilltap", "search", "discovery", "taps"]
+    }
+  ]
+}
