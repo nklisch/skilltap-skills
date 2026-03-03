@@ -5,108 +5,101 @@ license: MIT
 ---
 # skilltap
 
-skilltap is a CLI for installing agent skills (SKILL.md files) from any git host or npm. Skills install to `.agents/skills/` (project) or `~/.agents/skills/` (global) and are agent-agnostic.
+Installs, updates, and removes agent skills. Designed for agent-mode operation: no prompts, plain-text output, hard-fail on security warnings.
+
+## Before using any other command
+
+Run `skilltap status` first. If `agent-mode` is disabled, **stop immediately** and tell the user:
+
+> "skilltap agent mode is not enabled. Please run `skilltap config agent-mode` to configure it, then try again."
+
+Do not attempt to install, update, or remove skills until agent mode is enabled.
+
+## Status
+
+```bash
+skilltap status        # plain text key:value
+skilltap status --json # JSON
+```
+
+Fields:
+- `agent-mode` — `enabled` or `disabled`
+- `scope` — `project` or `global` (the default scope for operations)
+- `scan` — `static`, `semantic`, or `off`
+- `agent` — configured LLM agent for semantic scan (or `null`)
+- `also` — agent dirs to symlink into (e.g. `claude-code cursor`)
+- `taps` — number of configured taps
 
 ## Install
 
 ```bash
-skilltap install <source> [flags]
+skilltap install <source>
+skilltap install <source> --project
+skilltap install <source> --global
 ```
 
-### Source formats
+Exits 1 immediately if security warnings are found. All skills in multi-skill repos are installed automatically.
 
-```bash
-skilltap install user/repo                        # GitHub shorthand
-skilltap install github:user/repo                 # GitHub explicit
-skilltap install https://gitea.example.com/u/r   # Any git URL
-skilltap install git@github.com:user/repo.git     # SSH
-skilltap install commit-helper                    # By tap name
-skilltap install commit-helper@v1.2.0             # Tap name + version/ref
-skilltap install ./my-skill                       # Local path
-skilltap install npm:@scope/skill-name            # npm registry
-skilltap install npm:@scope/skill-name@1.2.3      # npm pinned version
-```
+Source formats:
+- `user/repo` — GitHub shorthand
+- `github:user/repo` — GitHub explicit
+- `https://host/u/r` — any git URL
+- `git@github.com:user/repo.git` — SSH
+- `skill-name` — tap name (requires a tap to be configured)
+- `skill-name@v1.2.0` — tap name at ref
+- `npm:@scope/pkg` — npm registry
+- `npm:@scope/pkg@1.2.3` — npm pinned
 
-### Key flags
+Flags:
+- `--project` / `--global` — override configured scope
+- `--ref <ref>` — branch or tag
+- `--also <agent>` — also symlink into agent dir; repeatable (`claude-code`, `cursor`, `codex`, `gemini`, `windsurf`)
+- `--semantic` — run LLM-based semantic security scan (requires agent config)
 
-| Flag | Effect |
-|------|--------|
-| `--global` | Install to `~/.agents/skills/` |
-| `--project` | Install to `.agents/skills/` in current project |
-| `--yes` | Auto-select all skills; auto-accept clean scans |
-| `--also <agent>` | Also symlink to agent dir (repeatable) |
-| `--ref <ref>` | Branch or tag to install |
-| `--strict` | Abort on any security warning (exit 1) |
-| `--semantic` | Run Layer 2 LLM-based semantic scan |
-| `--skip-scan` | Skip security scanning |
-
-`--yes` does **not** skip the scope prompt — use `--yes --global` or `--yes --project` for fully non-interactive installs.
-
-`--also` values: `claude-code`, `cursor`, `codex`, `gemini`, `windsurf`
-
-### Scope behavior
-
-- Without `--global` or `--project`: prompts "Install to: Global / Project"
-- `--project` requires a git repo root to be found in cwd or parents
-
-## List installed skills
-
-```bash
-skilltap list              # table: name, scope, source, trust, installed date
-skilltap list --json       # machine-readable
-```
+Do not pass `--yes` (no-op), `--strict` (forced), or `--skip-scan` (rejected with error) in agent mode.
 
 ## Update
 
 ```bash
-skilltap update            # update all installed skills
-skilltap update <name>     # update one skill
-skilltap update --yes      # non-interactive (auto-accept clean updates)
+skilltap update               # all installed skills
+skilltap update <name>        # one skill
+skilltap update --semantic    # with semantic scan
 ```
+
+Security warnings on update are reported but do not block — the update is skipped for that skill and the run continues.
 
 ## Remove
 
 ```bash
 skilltap remove <name>
-skilltap remove <name> --yes    # skip confirmation
+```
+
+No confirmation prompt in agent mode.
+
+## List
+
+```bash
+skilltap list         # table: name, scope, source, trust, date
+skilltap list --json  # JSON array
 ```
 
 ## Info
 
 ```bash
-skilltap info <name>    # source, path, version/SHA, trust tier, agent symlinks
+skilltap info <name>  # source, path, SHA, trust tier, symlinks
 ```
 
-## Link (local development)
+## Output format
 
-Symlink a local skill directory instead of installing from a remote source. Changes to the local directory are reflected immediately.
-
-```bash
-skilltap link ./my-skill               # prompts for scope
-skilltap link ./my-skill --global
-skilltap link ./my-skill --project
-skilltap unlink my-skill
-```
-
-## Doctor
-
-Diagnose environment: git, config, dirs, installed.json integrity, symlinks, taps, agents, npm.
-
-```bash
-skilltap doctor
-skilltap doctor --fix    # auto-repair where safe
-```
-
-## Config
-
-Interactive setup wizard for `~/.config/skilltap/config.toml`.
-
-```bash
-skilltap config
-```
+Plain text, one line per skill:
+- `OK: Installed <name> → <path>`
+- `OK: <name> is already up to date.`
+- `SKIP: <name> is linked.`
+- `ERROR: <message>` (stderr)
+- `SECURITY ISSUE FOUND — INSTALLATION BLOCKED` followed by details (stderr, exit 1)
 
 ## Exit codes
 
 - `0` — success
-- `1` — error
-- `2` — user cancelled
+- `1` — error or security block
+- `2` — cancelled
