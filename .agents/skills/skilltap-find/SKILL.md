@@ -1,57 +1,55 @@
 ---
 name: skilltap-find
-description: Discover and search for agent skills via configured taps and the npm registry.
+description: Discover and search for agent skills via configured taps and the skills.sh registry. Use when the user wants to find, discover, or search for available agent skills to install.
 license: MIT
 ---
 # skilltap-find
 
-Search for installable agent skills via taps or npm. Use `--json` for machine-readable output.
+Search for installable agent skills via taps and the skills.sh registry.
 
-## Search taps
+## Search
 
 ```bash
-skilltap find                     # list all skills in configured taps
-skilltap find <query>             # filter by name, description, or tags
-skilltap find <query> --json
+skilltap find <query> --json          # structured output for parsing
+skilltap find <query>                 # plain text table
+skilltap find <query> --local         # taps only, skip registry
+skilltap find                         # list all tap skills (no registry search)
 ```
 
-Output fields (JSON): `tap`, `name`, `description`, `trust`
+Multi-word queries work without quoting: `skilltap find git hooks`
 
-## Search npm
+Registry searches require a query of at least 2 characters. Results: tap matches first, then registry results sorted by install count.
+
+## JSON output fields
+
+`name`, `description`, `source`, `installRef`, `skill` (if multi-skill repo), `installs` (registry only)
+
+## Install a found skill
+
+Use the `installRef` from JSON output, or the skill name directly:
 
 ```bash
-skilltap find --npm               # list all agent-skill packages on npm
-skilltap find --npm <query>
-skilltap find --npm <query> --json
+skilltap install <skill-name> --project
+skilltap install <skill-name> --global
+skilltap install <skill-name>@v1.2.0 --project
 ```
 
 ## Trust tiers
 
 - `provenance` — SLSA attestation verified via Sigstore
-- `publisher` — known npm publisher
+- `publisher` — known publisher
 - `curated` — tap maintainer manually verified
 - `unverified` — no verification; review before installing
 
-## Install a found skill
-
-Once identified, install by tap name (no URL required):
-
-```bash
-skilltap install <skill-name>
-skilltap install <skill-name> --project
-skilltap install <skill-name>@v1.2.0
-```
-
 ## Manage taps
 
-Taps are git repos containing a `tap.json` registry. Register them once; then search and install by name.
+Taps are git repos containing a `tap.json` registry.
 
 ```bash
-skilltap tap add <name> <url>     # clone and register
+skilltap tap add <name> <url>
 skilltap tap remove <name>
 skilltap tap list
-skilltap tap update               # pull latest for all taps
-skilltap tap update <name>
+skilltap tap update [name]
 ```
 
 Add the official tap:
