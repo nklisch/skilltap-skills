@@ -1,6 +1,6 @@
 # Security configuration
 
-Security settings are configured per-mode (human vs agent) with presets and trust overrides.
+Security settings are configured per-mode (human vs agent) with presets and trust overrides. Trust tiers (tap trust, source type) are informational signals that influence which policy applies — they do not themselves block installs. Blocking is determined by the active scan level (`scan`) and warning behavior (`on_warn`) for the current mode.
 
 ## Contents
 - Configure security

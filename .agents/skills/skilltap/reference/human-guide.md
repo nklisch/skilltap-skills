@@ -4,7 +4,7 @@ Use this reference when the user wants to understand skilltap, set it up for the
 
 ## What is skilltap?
 
-skilltap is a CLI tool for managing agent skills — reusable instruction bundles that teach AI agents (Claude Code, Cursor, Codex, Gemini, Windsurf) how to perform specific tasks. It handles installing from git repos, npm, or curated registries (taps), with built-in security scanning.
+skilltap is a CLI tool for managing agent skills — reusable instruction bundles that teach AI agents (Claude Code, Cursor, Codex, Gemini, Windsurf) how to perform specific tasks. It handles installing from git repos, npm, or curated registries (taps), with built-in security scanning. Plugins bundle skills, MCP servers, and agent definitions into a single installable unit.
 
 ## First-time setup
 
@@ -19,7 +19,7 @@ Guide the user through these steps in order:
    ```bash
    skilltap config
    ```
-   This interactively configures: default scope (global vs project), agent symlink targets, and security settings.
+   This interactively configures: default scope (global vs project), agent symlink targets, and security settings. For non-interactive editing use `skilltap config get` / `skilltap config set`.
 
 3. **Enable agent mode** (so agents can use skilltap non-interactively):
    ```bash
@@ -27,9 +27,18 @@ Guide the user through these steps in order:
    ```
    This sets up: agent-mode enabled flag, default scope for agent operations, and agent-specific security policy.
 
-4. **Add a tap** (optional, for curated skill discovery):
+4. **Browse and install skills** — the official skilltap tap is built in, so no tap setup is required. Use `skilltap find` immediately to search it:
    ```bash
-   skilltap tap add skilltap https://github.com/nklisch/skilltap-skills
+   skilltap find
+   skilltap find --interactive   # type-ahead search with install picker
+   ```
+   To add other community taps:
+   ```bash
+   skilltap tap add <name> <url-or-registry>
+   ```
+   Taps can be git repos or HTTP registries — `skilltap tap add` auto-detects. To bulk-install (or remove) skills from configured taps via a multiselect picker:
+   ```bash
+   skilltap tap install
    ```
 
 ## Security configuration
@@ -66,11 +75,14 @@ Allow relaxing or tightening security for specific sources:
 These commands use interactive UI (prompts, spinners, colored output) and are only available in human mode:
 
 - `skilltap config` — full setup wizard
-- `skilltap config agent-mode` — agent mode toggle
+- `skilltap config agent-mode` — agent mode toggle (TTY only; the only way to enable or disable agent mode)
 - `skilltap config security` — security wizard
-- `skilltap config telemetry` — telemetry toggle
+- `skilltap config telemetry status|enable|disable` — toggle anonymous usage data (OS, arch, command success/fail — no skill names or paths)
+- `skilltap config get [key] [--json]` — non-interactive; read one or all config values; safe for scripts
+- `skilltap config set <key> <value>` — non-interactive; write a config value; silent on success; safe for scripts
 - `skilltap find --interactive` / `skilltap find -i` — type-ahead skill search with install picker
 - `skilltap skills adopt` (without names) — multiselect picker for unmanaged skills
+- `skilltap plugin toggle <name>` — interactive component picker for an installed plugin
 
 ## Understanding skill scopes
 
@@ -93,6 +105,48 @@ Supported agents: `claude-code`, `cursor`, `codex`, `gemini`, `windsurf`
 - **Disable**: hides the skill from agents temporarily — files move to `.agents/skills/.disabled/` but remain installed. Re-enable anytime.
 - **Remove**: permanently deletes the skill and all symlinks.
 
+## Plugins
+
+A plugin is a bundle of skills, MCP servers, and (Claude Code) agent definitions installed as a single unit. skilltap supports both Claude Code plugins (`.claude-plugin/plugin.json`) and Codex plugins (`.codex-plugin/plugin.json`).
+
+### Installing a plugin
+
+Use the same `skilltap install` command — plugin detection is automatic:
+
+```bash
+skilltap install https://github.com/corp/dev-toolkit --also claude-code --also cursor
+```
+
+If a plugin manifest is found, skilltap prompts: `Install as plugin? (Y/n)`. Declining falls back to skill-only install. With `--yes`, the plugin is accepted automatically.
+
+### MCP servers
+
+MCP servers declared in the plugin are injected into each target agent's config file:
+
+| Agent | Config file |
+|-------|------------|
+| Claude Code | `~/.claude/settings.json` |
+| Cursor | `~/.cursor/mcp.json` |
+| Codex | `~/.codex/mcp.json` |
+| Gemini | `~/.gemini/settings.json` |
+| Windsurf | `~/.windsurf/mcp.json` |
+
+Both stdio and HTTP MCP server types are supported (HTTP support added in v0.10.8). Injected entries are namespaced as `skilltap:<plugin>:<server>` to avoid collisions with user-configured servers. Before any agent config file is first modified, a `.skilltap.bak` backup is written.
+
+### Managing plugins
+
+```bash
+skilltap plugin                       # list installed plugins
+skilltap plugin info <name>           # details and component status
+skilltap plugin toggle <name>         # interactive component picker (enable/disable individual skills, MCPs, or agents)
+skilltap plugin toggle <name> --mcps  # disable/enable all MCP servers in the plugin
+skilltap plugin toggle <name> --skills
+skilltap plugin toggle <name> --agents
+skilltap plugin remove <name>         # remove plugin and all its components
+```
+
+Removing a plugin removes only the `skilltap:*`-namespaced MCP entries it owns. User-configured MCP entries are never touched.
+
 ## Adopting unmanaged skills
 
 If skills were manually placed in agent directories (not installed via skilltap), the adopt command brings them under management:
@@ -102,3 +156,14 @@ skilltap skills adopt              # interactive picker
 skilltap skills adopt my-skill     # by name
 skilltap skills adopt my-skill --track-in-place  # don't move, just track
 ```
+
+Flags: `--global`, `--project`, `--track-in-place`, `--also <agent>`, `--skip-scan`, `--yes`
+
+## Other useful commands
+
+- `skilltap doctor [--fix]` — check environment health (git, config, dirs, integrity, symlinks, taps). `--fix` auto-repairs issues where safe.
+- `skilltap verify [path]` — validate a skill before sharing (frontmatter, security scan, size). Useful as a pre-push hook or CI step.
+- `skilltap create [name]` — scaffold a new skill from a template (`--template basic|npm|multi`).
+- `skilltap completions <shell>` — generate shell completions for bash, zsh, or fish. `--install` writes to the standard location.
+- `skilltap self-update` — update the CLI binary; auto-detects from GitHub releases.
+- `skilltap status [--json]` — show agent mode status and current settings (scope, scan level, taps, plugins).

@@ -2,6 +2,8 @@
 
 Unified view and management of all installed skills.
 
+`skilltap skills` lists **skills only**. Installed plugins are separate — use `skilltap plugin` to list them. Plugin-owned skills do not appear in `installed.json` and must be managed via `skilltap plugin toggle` or `skilltap plugin remove`. See [plugin-commands.md](plugin-commands.md).
+
 ## Contents
 - List skills
 - Skill info
