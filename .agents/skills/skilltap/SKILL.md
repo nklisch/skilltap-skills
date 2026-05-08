@@ -1,170 +1,112 @@
 ---
 name: skilltap
-description: Manage agent skills and plugins with the skilltap CLI — install, update, remove, disable, enable, adopt, and move skills from any git host or npm; manage plugin bundles (skills + MCP servers + agent definitions). Use when the user wants to install, update, remove, list, adopt, move, disable, or enable agent skills or plugins, or configure skilltap settings.
+description: >
+  Install, update, remove, list, disable, enable, adopt, move, link, unlink,
+  configure, and inspect agent skills and plugins via the skilltap CLI.
+  Also: troubleshoot skilltap config or state, toggle plugin components
+  (MCPs, agent definitions, skills), manage taps for skill discovery,
+  run doctor checks, introspect installed.json or plugins.json, configure
+  security policy, and any other operation on skilltap-managed skills or plugins.
 license: MIT
 ---
+
 # skilltap
 
-Agent-mode CLI for installing, updating, removing, and managing agent skills and plugins. All output is plain text, no interactive prompts, security warnings hard-fail.
+skilltap is a CLI for installing and managing AI-agent skills and plugins — think Homebrew for agent skills. It installs to `.agents/skills/`, is agent-agnostic, and supports multiple sources (GitHub, any git URL, npm, local paths, tap registries).
 
-## Before using any command
+## Agent-mode gate (mandatory first step)
 
-Run `skilltap status` first. If `agent-mode` is disabled, **stop** and tell the user:
-
-> "skilltap agent mode is not enabled. Please run `skilltap config agent-mode` to configure it, then try again."
-
-Do not attempt any skill or plugin operations until agent mode is confirmed enabled.
-
-If the user wants to understand what skilltap is, how it works, or needs help with human-mode commands (interactive wizards, config setup), see [reference/human-guide.md](reference/human-guide.md).
-
-## Agent-mode behavior
-
-- `--yes` is auto-applied — never pass it
-- `--strict` is forced — never pass it
-- `--no-strict` has no effect in agent mode — security warnings always hard-fail
-- `--skip-scan` is rejected (exit 1) when `require_scan` is enabled
-- Scope must be set via `--project` / `--global` or pre-configured in `agent-mode.scope`
-- Security warnings always hard-fail (exit 1) — no override available
-- All output is plain text to stdout; errors to stderr
-- All skill names in multi-skill repos are installed automatically
-- Plugin install prompts ("Install as plugin?") auto-accept in agent mode
-
-## Command reference
-
-| Task | Command |
-|------|---------|
-| Check status | `skilltap status [--json]` |
-| Install skill or plugin | `skilltap install <source> [--project\|--global]` |
-| Update skills | `skilltap update [name] [--check] [--json]` |
-| Remove skill | `skilltap skills remove <name>` |
-| List skills | `skilltap skills [--json]` |
-| Skill info | `skilltap skills info <name>` |
-| Disable skill | `skilltap skills disable <name>` |
-| Enable skill | `skilltap skills enable <name>` |
-| Adopt skill | `skilltap skills adopt [name...] [--yes]` |
-| Move skill | `skilltap skills move <name> --global\|--project` |
-| Find skills | `skilltap find [query] [--json]` |
-| List plugins | `skilltap plugin [--json]` |
-| Plugin info | `skilltap plugin info <name> [--json]` |
-| Toggle plugin components | `skilltap plugin toggle <name> --skills\|--mcps\|--agents [--json]` |
-| Remove plugin | `skilltap plugin remove <name> [--json]` |
-
-Human-mode only (agents may encounter these but cannot invoke them interactively):
-- `skilltap doctor` — environment check
-- `skilltap verify [path]` — validate a skill before sharing
-- `skilltap completions <shell>` — generate shell completions
-- `skilltap create [name]` — scaffold a new skill
-
-## Aliases
-
-Silent aliases for backwards compatibility — prefer the canonical forms above:
-
-| Alias | Canonical |
-|-------|-----------|
-| `skilltap list` | `skilltap skills` |
-| `skilltap remove` | `skilltap skills remove` |
-| `skilltap info` | `skilltap skills info` |
-| `skilltap link` | `skilltap skills link` |
-| `skilltap unlink` | `skilltap skills unlink` |
-| `skilltap plugins` | `skilltap plugin` |
-
-## Status
+Before any operation, check that agent mode is enabled:
 
 ```bash
 skilltap status --json
 ```
 
-Plain text fields (one per line):
-- `agent-mode: enabled|disabled`
-- `scope: project|global|(not configured)`
-- `security.human: <description>`
-- `security.agent: <description>`
-- `agent_cli: <path>|(none)`
-- `also: <a> <b>|(none)`
-- `taps: <count>`
-- `plugins: <count>`
+Parse the output and check `agentMode === true`. If it is `false`, **stop**. Tell the user:
 
-JSON fields: `agentMode` (boolean), `scope` (string|null), `security` (`{ human, agent, agent_cli }`), `also` (array), `taps` (number), `plugins` (number).
+> Agent mode is not enabled. Please run `skilltap config agent-mode` in your terminal to enable it, then retry.
 
-Always check `agentMode` is `true` before proceeding.
+Do NOT proceed with any install, update, or management command until agent mode is confirmed enabled.
 
-## Install
+See [reference/agent-mode.md](reference/agent-mode.md) for the full output schema and rules.
 
-```bash
-skilltap install <source> --project
-skilltap install <source> --global
-skilltap install <source> --also claude-code --also cursor
-skilltap install <source> --ref v1.2.0
-skilltap install <source> --semantic
-skilltap install <source> --quiet
-```
+## Quick decision rules
 
-Source formats:
-- `user/repo` — GitHub shorthand
-- `github:user/repo` — GitHub explicit
-- Any git URL or SSH URL
-- `skill-name` — tap lookup
-- `skill-name@v1.2.0` — tap lookup with version
-- `tap-name/plugin-name` — tap-defined plugin
-- `./local-path` — local path
-- `npm:@scope/pkg` — npm registry
-- `npm:@scope/pkg@1.2.3` — npm pinned version
+| Asked to do... | Run this |
+|---|---|
+| Install a skill or plugin by GitHub user/repo | `skilltap install user/repo [--project\|--global]` |
+| Install from tap by name | `skilltap install skill-name [--project\|--global]` |
+| Install from npm | `skilltap install npm:@scope/name` |
+| Install a local directory | `skilltap install ./path/to/skill` |
+| Update one skill | `skilltap update skill-name` |
+| Update all skills | `skilltap update` |
+| List all skills | `skilltap skills [--project\|--global]` |
+| Get details on a skill | `skilltap skills info skill-name` |
+| Disable a skill | `skilltap skills disable skill-name` |
+| Enable a skill | `skilltap skills enable skill-name` |
+| Remove a skill | `skilltap skills remove skill-name` |
+| List plugins | `skilltap plugin [--project\|--global]` |
+| Get plugin details | `skilltap plugin info plugin-name` |
+| Toggle plugin components | `skilltap plugin toggle plugin-name [--skills\|--mcps\|--agents]` |
+| Remove a plugin | `skilltap plugin remove plugin-name` |
+| Check environment health | `skilltap doctor` |
+| Read a config value | `skilltap config get key` |
+| Write a config value | `skilltap config set key value` |
+| Check agent mode / security status | `skilltap status --json` |
 
-Plugin auto-detection: if the repo contains `.claude-plugin/plugin.json` or `.codex-plugin/plugin.json`, the install is automatically treated as a plugin install. In agent mode the "Install as plugin?" prompt auto-accepts. See [reference/plugin-commands.md](reference/plugin-commands.md).
+## Command reference
 
-## Update
+| Command | Purpose |
+|---|---|
+| `skilltap install <source>` | Install a skill or plugin (auto-detects plugin manifests) |
+| `skilltap update [name]` | Update installed skills; omit name to update all |
+| `skilltap skills` | List skills (managed + linked + unmanaged) |
+| `skilltap skills info <name>` | Show skill record details |
+| `skilltap skills remove [name...]` | Remove one or more skills |
+| `skilltap skills disable <name>` | Disable a skill (moves to `.disabled/`) |
+| `skilltap skills enable <name>` | Re-enable a disabled skill |
+| `skilltap skills adopt [name...]` | Adopt unmanaged skills under skilltap management |
+| `skilltap skills move <name>` | Move skill between scopes (`--project` / `--global`) |
+| `skilltap skills link <path>` | Symlink a local skill directory |
+| `skilltap skills unlink <name>` | Remove a linked skill |
+| `skilltap plugin` | List installed plugins |
+| `skilltap plugin info <name>` | Show plugin details and component states |
+| `skilltap plugin toggle <name>` | Flip component active states (`--skills` / `--mcps` / `--agents`) |
+| `skilltap plugin remove <name>` | Remove a plugin and all its components |
+| `skilltap status [--json]` | Agent-mode status report |
+| `skilltap doctor [--fix]` | Check environment and state; `--fix` repairs symlinks |
+| `skilltap config get [key]` | Read config value (any key) |
+| `skilltap config set <key> <value>` | Write config value (allowlisted keys only) |
+| `skilltap config agent-mode` | Toggle agent mode (TTY-only, call from terminal) |
+| `skilltap config security` | Configure security (TTY wizard or flags) |
+| `skilltap config telemetry` | Status / enable / disable telemetry |
+| `skilltap find [query]` | Search taps and skills.sh registry |
+| `skilltap tap` | Manage tap sources |
+| `skilltap create [name]` | Scaffold a new skill |
+| `skilltap verify [path]` | Validate a skill |
+| `skilltap self-update` | Update the CLI binary |
+| `skilltap completions <shell>` | Generate shell completions |
 
-```bash
-skilltap update                       # all installed skills
-skilltap update <name>                # single skill
-skilltap update --check               # check for updates, don't apply
-skilltap update --semantic            # with semantic security scan
-skilltap update --json                # JSON output
-```
+Silent aliases (documented once — prefer canonical forms above): `list` → `skills`, `remove` → `skills remove`, `info` → `skills info`, `link` → `skills link`, `unlink` → `skills unlink`, `plugins` → `plugin`.
 
-`--check` / `-c`: checks for available updates, refreshes the cache, prints which skills have updates — does not apply them.
+## Important constraints in agent mode
 
-Warnings on update skip the affected skill and continue. Disabled skills are skipped.
+- `--yes` is auto-applied. Never pass it explicitly.
+- `--skip-scan` is rejected by default (require_scan enforced). Do not pass it.
+- `--no-strict` has no effect in agent mode.
+- Scope must be `--project` or `--global`. If neither is passed, the configured default (`agent-mode.scope`, default `project`) is used.
+- Plugin install prompts auto-accept. Multi-skill repos auto-select all skills.
+- Security warnings cause exit 1 with a `SECURITY ISSUE FOUND` block — relay verbatim to user, do not retry.
 
-## Skills command group
+## Reference pages
 
-Unified skill management — list, adopt, move, disable, enable, remove, info. See [reference/skills-commands.md](reference/skills-commands.md) for full command details and flags.
+- [reference/installing.md](reference/installing.md) — Source formats, install decision tree, plugin auto-detection, output formats
+- [reference/managing.md](reference/managing.md) — Post-install skill and plugin management (list, disable, enable, remove, adopt, move, link, plugin commands)
+- [reference/agent-mode.md](reference/agent-mode.md) — Status check schema, flag rules, exit codes, output formats, security block handling
+- [reference/config.md](reference/config.md) — Full config.toml schema, settable vs blocked keys, config subcommands
+- [reference/state-files.md](reference/state-files.md) — installed.json and plugins.json schemas, field types, component union
+- [reference/filesystem.md](reference/filesystem.md) — Where everything lives on disk, globalBase resolution, symlink semantics
+- [reference/troubleshooting.md](reference/troubleshooting.md) — Error patterns and recovery steps
 
-Note: `skilltap skills` lists skills only. Installed plugins appear via `skilltap plugin`. Plugin-owned skills do NOT appear in `installed.json` — never attempt to remove them with `skilltap skills remove`.
-
-## Plugin command group
-
-Plugins are bundles of skills + MCP servers + agent definitions installed as a single unit. See [reference/plugin-commands.md](reference/plugin-commands.md) for full command details, output formats, and agent-mode rules.
-
-## Security configuration
-
-Per-mode settings (human vs agent), presets (none/relaxed/standard/strict), and trust overrides. See [reference/security-config.md](reference/security-config.md) for configuration details.
-
-## Taps
-
-```bash
-skilltap tap add <name> <url>
-skilltap tap remove <name>
-skilltap tap list
-skilltap tap update [name]
-```
-
-## Output parsing
-
-Skill install — stdout, one line per skill:
-- `OK: Installed <name> -> <path>`
-- `OK: <name> is already up to date.`
-- `SKIP: <name> is linked.`
-- `SKIP: <name> — disabled`
-
-Plugin install emits component lines followed by a summary line. See [reference/plugin-commands.md](reference/plugin-commands.md) for plugin output formats.
-
-Stderr on failure:
-- `ERROR: <message>`
-- `SECURITY ISSUE FOUND — INSTALLATION BLOCKED` followed by details
-
-## Exit codes
-
-- `0` — success
-- `1` — error or security block
-- `2` — cancelled
+For skill discovery (find, tap management): load the `skilltap-find` skill.
+For authoring new skills or plugins: load the `skilltap-author` skill.

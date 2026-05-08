@@ -1,18 +1,24 @@
 {
   "name": "skilltap",
-  "description": "Official skills for using skilltap — install and discover agent skills and plugins.",
+  "description": "Official skills for using skilltap — install, discover, and author agent skills, plugins, and taps.",
   "skills": [
     {
       "name": "skilltap",
-      "description": "Manage agent skills and plugins with the skilltap CLI — install, update, remove, list, adopt, move, disable, enable, and toggle plugin components.",
+      "description": "Install, update, remove, list, configure, and inspect agent skills and plugins via the skilltap CLI. Covers state files, filesystem layout, agent-mode rules, and troubleshooting.",
       "repo": "nklisch/skilltap-skills",
-      "tags": ["skilltap", "cli", "skills", "plugins", "mcp", "package-manager"]
+      "tags": ["skilltap", "cli", "skills", "plugins", "mcp", "package-manager", "agent-mode"]
     },
     {
       "name": "skilltap-find",
-      "description": "Discover and search for agent skills and plugins via taps and the skills.sh registry.",
+      "description": "Discover and search for agent skills and plugins via skilltap taps and the skills.sh registry. Covers source formats, tap management, and trust tiers.",
       "repo": "nklisch/skilltap-skills",
-      "tags": ["skilltap", "search", "discovery", "taps", "plugins"]
+      "tags": ["skilltap", "search", "discovery", "taps", "plugins", "registry"]
+    },
+    {
+      "name": "skilltap-author",
+      "description": "Create, scaffold, validate, and publish agent skills, plugins, and taps. Covers SKILL.md frontmatter, plugin manifests (Claude Code + Codex), tap.json indexes, provenance, and publishing workflows.",
+      "repo": "nklisch/skilltap-skills",
+      "tags": ["skilltap", "authoring", "scaffold", "publish", "verify", "plugins", "taps"]
     }
   ]
 }
