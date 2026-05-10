@@ -4,7 +4,7 @@ A skill is a directory containing a `SKILL.md` file. The frontmatter tells skill
 
 ## Frontmatter schema
 
-Source of truth: `packages/core/src/schemas/skill.ts`.
+Source of truth: `packages/core/src/schemas/skill.ts` (`SkillFrontmatterSchema`).
 
 ```yaml
 ---
@@ -17,7 +17,7 @@ metadata:                   # optional. Arbitrary key-value pairs.
 ---
 ```
 
-`skilltap verify` enforces all constraints. The `name` field must also match the directory name exactly — verification fails if they differ.
+`skilltap doctor skill <path>` enforces all constraints. The `name` field must also match the parent directory name exactly — validation fails if they differ.
 
 The frontmatter parser supports YAML-style `---`...`---` delimiters with simple scalars, block scalars (`>` folded, `|` literal), and one level of nested objects. Do not use YAML anchors, aliases, or complex types.
 
@@ -27,10 +27,11 @@ The description is the primary trigger for agent skill-loading. Make it exhausti
 
 **Good** — action-oriented, lists synonyms and trigger phrases:
 ```
-Manage agent skills and plugins with the skilltap CLI — install, update,
-remove, list, adopt, move, disable, enable, link, unlink agent skills and
-plugins. Use when the user wants to install / update / remove / configure /
-inspect skilltap-managed content.
+Manage agent skills, plugins, and standalone MCP servers via the skilltap
+CLI — install, update, remove, list, toggle, adopt, move, configure, and
+inspect. Use when the user wants to install / update / remove / configure
+skilltap-managed content, work with skilltap.toml, or troubleshoot
+state.json.
 ```
 
 **Bad** — too vague to trigger reliably:
@@ -60,19 +61,24 @@ Reference pages (`reference/*.md`) do not need frontmatter. The agent loads them
 
 ## Multi-skill repos
 
-A single repo can contain many skills. Discovery (`packages/core/src/scanner.ts`) finds skills via:
+A single repo can contain many skills. Discovery (`packages/core/src/scanner.ts`) finds skills via this priority order:
 
-1. `SKILL.md` at repo root — single-skill repo.
-2. `<dir>/SKILL.md` at any depth — each directory becomes a separate installable skill.
-3. `plugins/*/skills/*/SKILL.md` — Claude Code marketplace layout.
+1. **Root**: `SKILL.md` at repo root → standalone single-skill repo.
+2. **Standard**: `.agents/skills/*/SKILL.md` → each match is a skill, named by parent directory.
+3. **Skills directory**: `skills/SKILL.md` (flat) or `skills/*/SKILL.md`.
+4. **Plugin directory**: `plugins/*/skills/*/SKILL.md` (Claude Code plugin convention).
+5. **Agent-specific**: `.claude/skills/*/SKILL.md`, `.cursor/skills/*/SKILL.md`, `.codex/skills/*/SKILL.md`, `.gemini/skills/*/SKILL.md`, `.windsurf/skills/*/SKILL.md`.
+6. **Deep scan**: `**/SKILL.md` anywhere else. Triggers a confirmation prompt unless `--yes`.
 
-In agent mode, multi-skill installs auto-select all skills. In interactive mode, the user picks.
+Steps 1–5 are checked first. If any of them find skills, step 6 is skipped. If the same SKILL.md is found via multiple paths, deduplication prefers the `.agents/skills/` path.
 
-If you have a multi-skill repo, each skill directory name must match its `frontmatter.name`. Use `--template multi` to scaffold the layout.
+In TTY mode, multi-skill installs prompt the user to pick. With `--yes` (or non-TTY mode), all discovered skills are auto-selected.
+
+If you have a multi-skill repo, each skill directory name MUST match its `frontmatter.name`. Use `--template multi` to scaffold the layout.
 
 ## Complete example
 
-Copy and adapt this as your starting point:
+Copy and adapt as your starting point:
 
 ```markdown
 ---
@@ -91,14 +97,14 @@ Brief description of what the tool does.
 
 ## Installation
 
-```bash
+\`\`\`bash
 npm install -g my-tool
-```
+\`\`\`
 
 ## Common commands
 
 | Command | Description |
-|---------|-------------|
+|---|---|
 | `my-tool init` | Initialize a new project |
 | `my-tool run`  | Run the project |
 
@@ -114,4 +120,13 @@ Config lives at `~/.my-tool/config.toml`. Key fields:
 - Always run `my-tool validate` before `my-tool deploy`.
 - Prefer `--dry-run` for destructive operations.
 ```
-```
+
+## Validation checklist
+
+Run `skilltap doctor skill <path>` to validate. Checks:
+
+- `SKILL.md` exists at the path.
+- Frontmatter parses and validates against `SkillFrontmatterSchema`.
+- `frontmatter.name` matches the parent directory name.
+- Static security scan clean (no anti-trojan-source warnings, no dangerous patterns).
+- Skill directory size within the configured limit (default 50 KB; configurable via `[scanner].max_size`).

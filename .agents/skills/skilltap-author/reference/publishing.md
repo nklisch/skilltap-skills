@@ -4,7 +4,7 @@ Three channels for distributing a skill or plugin. Choose based on audience, tru
 
 ## Channel 1: Git host (any)
 
-The simplest option. Push your skill directory to any git host. Users install by URL.
+The simplest option. Push your skill or plugin directory to any git host. Users install by URL.
 
 ```bash
 git init && git add . && git commit -m "Initial commit"
@@ -15,14 +15,21 @@ git tag v1.0.0 && git push --tags
 
 Users install with:
 ```bash
-skilltap install github:you/my-skill           # latest default branch
-skilltap install github:you/my-skill@v1.0.0    # pinned tag
-skilltap install https://github.com/you/my-skill
+skilltap install skill github:you/my-skill           # latest default branch
+skilltap install skill github:you/my-skill@v1.0.0    # pinned tag
+skilltap install skill https://github.com/you/my-skill
+```
+
+For plugins:
+```bash
+skilltap install plugin github:you/my-plugin
+skilltap install plugin github:you/multi-plugin-repo:plugin-name
+skilltap install plugin github:you/multi-plugin-repo:*
 ```
 
 **Trust tier:** `unverified` by default. Upgrades to `curated` if a tap maintainer adds the entry with `trust.verified: true`.
 
-**GitHub Artifact Attestations** (optional enhancement): Add a workflow step using `actions/attest-build-provenance@v2` to cryptographically link your release artifacts to the workflow run. This is advisory metadata — skilltap reads it but the trust tier for bare git installs stays `unverified` unless tap-curated.
+**GitHub Artifact Attestations** (optional enhancement): add a workflow step using `actions/attest-build-provenance@v2` to cryptographically link your release artifacts to the workflow run. This is advisory metadata — skilltap reads it but the trust tier for bare git installs stays `unverified` unless tap-curated.
 
 ## Channel 2: npm
 
@@ -87,12 +94,12 @@ jobs:
           subject-path: SKILL.md
 ```
 
-Trigger: create a GitHub Release. npm will reflect the new version within minutes.
+Trigger: create a GitHub Release. npm reflects the new version within minutes.
 
 Users install with:
 ```bash
-skilltap install npm:@yourscope/my-skill
-skilltap install npm:@yourscope/my-skill@1.2.0    # pinned
+skilltap install skill npm:@yourscope/my-skill
+skilltap install skill npm:@yourscope/my-skill@1.2.0    # pinned
 ```
 
 ## Channel 3: Tap
@@ -126,11 +133,14 @@ git push -u origin main
 Users add your tap once:
 ```bash
 skilltap tap add my-tap https://github.com/you/my-tap
+# or with the GitHub shorthand:
+skilltap tap add you/my-tap
 ```
 
 Then install from it by name:
 ```bash
-skilltap install my-skill    # resolves via tap
+skilltap install skill my-skill    # resolves via tap
+skilltap install plugin my-tap/dev-toolkit
 ```
 
 See [tap-format.md](tap-format.md) for the full `tap.json` schema.
@@ -138,13 +148,13 @@ See [tap-format.md](tap-format.md) for the full `tap.json` schema.
 ## Trust tiers by channel
 
 | Publishing path | Trust tier |
-|-----------------|-----------|
+|---|---|
 | npm + `--provenance` (from public GHA + `id-token: write`) | `provenance` |
 | npm without provenance | `publisher` |
 | Bare git, tap-curated (`trust.verified: true`) | `curated` |
 | Bare git, no tap | `unverified` |
 
-Trust tiers affect what warnings (if any) users see on install. See [../skilltap-find/](../skilltap-find/) for how users browse by trust tier.
+Trust tiers affect what users see when browsing — they do NOT affect whether the install proceeds. Security policy (`[security].scan` + `[security].on_warn`) gates installs. See [../skilltap-find/reference/trust.md](../../skilltap-find/reference/trust.md).
 
 ## Versioning
 
@@ -165,10 +175,13 @@ npm publish --provenance --access public
 
 ## Pre-publish checklist
 
-1. `skilltap verify` exits 0.
+1. `skilltap doctor skill <path>` (or `doctor plugin <path>`) exits 0.
 2. `frontmatter.name` matches the directory name exactly.
 3. Description is action-oriented and exhaustive — confirm the agent loads the skill on plain-language prompts.
-4. Static scan clean (no anti-trojan-source or dangerous-pattern warnings).
-5. Total skill size < 50 KB.
+4. Static security scan clean (no anti-trojan-source / dangerous-pattern warnings).
+5. Total skill size < 50 KB (configurable via `[scanner].max_size`).
 6. `README.md` for humans browsing the repo.
 7. Release tag (`git tag v1.0.0 && git push --tags`).
+8. For npm: workflow has `id-token: write` permission and runs `npm publish --provenance --access public`.
+
+`skilltap verify <path>` was removed in v2 — use `doctor skill <path>` or `doctor plugin <path>` instead. The old verb prints a hint and exits 1.

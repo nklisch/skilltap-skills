@@ -1,24 +1,24 @@
 {
   "name": "skilltap",
-  "description": "Official skills for using skilltap — install, discover, and author agent skills, plugins, and taps.",
+  "description": "Official skills for using skilltap — install, discover, and author agent skills, plugins, and standalone MCP servers.",
   "skills": [
     {
       "name": "skilltap",
-      "description": "Install, update, remove, list, configure, and inspect agent skills and plugins via the skilltap CLI. Covers state files, filesystem layout, agent-mode rules, and troubleshooting.",
+      "description": "Install, update, remove, list, toggle, adopt, move, configure, and inspect agent skills, plugins, and standalone MCP servers via the skilltap CLI. Covers state.json, skilltap.toml + skilltap.lock (project manifest + lockfile), config.toml (flat [security] + [scanner] blocks), filesystem layout, non-interactive use (TTY / plain / JSON output modes), and troubleshooting.",
       "repo": "nklisch/skilltap-skills",
-      "tags": ["skilltap", "cli", "skills", "plugins", "mcp", "package-manager", "agent-mode"]
+      "tags": ["skilltap", "cli", "skills", "plugins", "mcp", "package-manager", "manifest", "lockfile", "sync"]
     },
     {
       "name": "skilltap-find",
-      "description": "Discover and search for agent skills and plugins via skilltap taps and the skills.sh registry. Covers source formats, tap management, and trust tiers.",
+      "description": "Discover and search for agent skills, plugins, and standalone MCP servers via skilltap taps and the skills.sh registry. Covers source formats for typed installs (install skill / plugin / mcp), git-only tap management, and trust tiers.",
       "repo": "nklisch/skilltap-skills",
-      "tags": ["skilltap", "search", "discovery", "taps", "plugins", "registry"]
+      "tags": ["skilltap", "search", "discovery", "taps", "plugins", "mcp", "registry"]
     },
     {
       "name": "skilltap-author",
-      "description": "Create, scaffold, validate, and publish agent skills, plugins, and taps. Covers SKILL.md frontmatter, plugin manifests (Claude Code + Codex), tap.json indexes, provenance, and publishing workflows.",
+      "description": "Create, scaffold, validate, and publish agent skills, plugins, and taps. Covers SKILL.md frontmatter, the native .skilltap/<name>.toml plugin format (plus Claude Code and Codex), tap.json indexes, provenance, and publishing workflows.",
       "repo": "nklisch/skilltap-skills",
-      "tags": ["skilltap", "authoring", "scaffold", "publish", "verify", "plugins", "taps"]
+      "tags": ["skilltap", "authoring", "scaffold", "publish", "doctor", "plugins", "taps"]
     }
   ]
 }

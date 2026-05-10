@@ -1,62 +1,65 @@
 # Taps
 
-A tap is an indexed source of installable skills and plugins. Two tap types exist:
+A tap is an indexed, curated source of installable skills and plugins — a `tap.json` file at the root of a git repository. Users add a tap once (`skilltap tap add`) and then install entries from it by name.
 
-- **git** — a git repository containing a `tap.json` at its root. Cloned locally; `tap update` pulls the latest commits.
-- **http** — an HTTP endpoint serving a `tap.json` document. Never cloned; `tap update` refreshes the cached copy. Detected automatically by URL pattern, or force with `--type http`.
+**Taps are git-only.** HTTP registry taps (with `auth_token` / `auth_env` fields) were removed in v2. If you have a v0.x config with `[[taps]] type = "http"`, `skilltap migrate` lists them and aborts so you can convert or remove them by hand.
 
-From an agent's perspective both types behave identically for `find` and `install`.
+From an agent's perspective, every tap behaves identically for `find` and `install`.
 
 ## Built-in tap
 
-`skilltap-skills` is bundled with the CLI. It is automatically cloned on first use and searched by `find`. Do not add it manually with `tap add`. Toggle it with the `builtin_tap` config key:
+The `skilltap-skills` tap is bundled with the CLI. It is automatically cloned on first use (lazily, to `~/.config/skilltap/taps/skilltap-skills/`) and searched by `find`. Do not add it manually with `tap add`.
+
+Toggle it via the top-level `builtin_tap` config key:
 
 ```toml
-# config.toml
+# ~/.config/skilltap/config.toml
 builtin_tap = false   # disable
 ```
 
+When disabled, `find` won't search it and the lazy clone is skipped.
+
 ## Tap subcommands
 
+```bash
+skilltap tap add <name> <url>
 ```
-skilltap tap add <name> <url> [--type git|http]
-```
-Add a tap. `--type` is optional — the CLI auto-detects git vs. HTTP. For GitHub-hosted taps, use the shorthand form instead:
 
-```
-skilltap tap add <owner/repo>
-```
-Derives the tap name from the repo name and the URL from `default_git_host`.
+Add a tap. The URL is treated as git only — there is no `--type` flag and no HTTP fallback. For GitHub-hosted taps, the shorthand form derives both name and URL:
 
+```bash
+skilltap tap add owner/repo
 ```
+
+```bash
 skilltap tap remove <name> [--yes]
 ```
-Remove a tap. Omit `--yes` to confirm interactively.
 
-```
+Remove a tap. Omit `--yes` to confirm interactively (TTY only).
+
+```bash
 skilltap tap list [--json]
 ```
-List all configured taps. `--json` for machine-readable output.
 
-```
-skilltap tap update [name]
-```
-Re-fetch the tap index. Git taps: `git pull`. HTTP taps: refresh cached `tap.json`. Omit `name` to update all taps.
+List all configured taps.
 
-```
+```bash
 skilltap tap info <name> [--json]
 ```
-Show metadata: name, type, URL, local path, last fetched timestamp, skill count. The `type` field is `"git"`, `"http"`, or `"builtin"`.
 
+Show metadata: name, type (`"git"` or `"builtin"`), URL, local path, last fetched timestamp, skill count.
+
+```bash
+skilltap tap init <directory>
 ```
-skilltap tap install [--tap <name>]      # HUMAN ONLY
-skilltap tap init <name>                 # HUMAN ONLY
-```
-`tap install` opens a multiselect picker to install skills from a tap. `tap init` scaffolds a new tap repository. Both require an interactive TTY — do not invoke from agent mode.
+
+Scaffold a new tap repo with a skeleton `tap.json` and an initialized `.git/`. Push to a remote so users can install with `skilltap tap add owner/repo`.
+
+There is **no `tap update` subcommand** in v2.x. Taps are refreshed on use; `skilltap doctor` reports unreachable taps.
 
 ## `tap.json` schema
 
-The index file served by every tap (git or HTTP):
+The index file at the root of every tap:
 
 ```json
 {
@@ -66,7 +69,7 @@ The index file served by every tap (git or HTTP):
     {
       "name": "commit-helper",
       "description": "...",
-      "repo": "https://github.com/example/commit-helper",
+      "repo": "owner/commit-helper",
       "tags": ["git"],
       "trust": { "verified": true, "verifiedBy": "...", "verifiedAt": "..." },
       "plugin": false
@@ -89,25 +92,40 @@ The index file served by every tap (git or HTTP):
 ```
 
 Schema notes:
-- `skills[].trust.verified` — when `true`, the skill gets `curated` trust tier (see `reference/trust.md`).
-- `skills[].plugin` — `true` marks entries that are tap-defined plugins (displayed with `[plugin]` badge in `find` output).
-- `plugins[]` — first-class plugin definitions. Install with `tap-name/plugin-name`.
+- `skills[].repo` — git URL or `npm:@scope/name`. The skill is fetched from there at install time.
+- `skills[].trust.verified` — when `true`, installs from this entry get the `curated` trust tier.
+- `skills[].plugin` — `true` marks entries that point at a plugin repo (vs a single-skill repo). Displayed with a `[plugin]` badge in `find` output.
+- `plugins[]` — first-class **inline** plugin definitions (the entire plugin lives in the tap, not in a separate repo). Install with `tap-name/plugin-name`.
 - `plugins[].mcpServers` — either a path string (relative to tap root) pointing to an MCP config file, or an inline MCP server map.
 
-## HTTP registry taps
+Validated at clone/update with `TapSchema` (Zod 4). Invalid taps fail with a clear parse error.
 
-HTTP taps serve `tap.json` over HTTPS. There is no local clone.
+## marketplace.json fallback
 
-**Authentication** for private registries goes in `config.toml` — not via CLI flags:
+If a tap repo has no `tap.json` at the root, skilltap looks for `.claude-plugin/marketplace.json` (Claude Code marketplace format) and adapts it to the internal `Tap` type. This lets Claude Code marketplaces work as taps.
 
-```toml
-[[taps]]
-name = "private-registry"
-url = "https://registry.example.com/tap.json"
-type = "http"
-auth_token = "tok_abc123"        # literal token
-# OR
-auth_env = "MY_REGISTRY_TOKEN"  # name of env var holding the token
-```
+Source mapping (`adaptMarketplaceToTap`):
 
-The token is sent as a Bearer header on each `tap update` and during `find`.
+| marketplace source type | Maps to |
+|---|---|
+| Relative path string (no plugin.json) | `TapSkill` — uses the marketplace repo's git URL |
+| Relative path string (with plugin.json) | `TapPlugin` — components from the manifest |
+| `github` source | `TapSkill` — `repo` field |
+| `url` source | `TapSkill` — `url` field |
+| `git-subdir` source | `TapSkill` — `url` field (path not preserved) |
+| `npm` source | `TapSkill` — `"npm:<package>"` |
+
+Plugin-only fields (LSP servers, hooks, slash commands, output styles) are silently ignored. Extra fields are stripped by Zod.
+
+## Maintenance workflow
+
+1. Clone the tap repo.
+2. Add or update entries in `tap.json`.
+3. Set `trust.verified` and `trust.verifiedAt` after vetting each entry.
+4. Commit and push. Consumers get updates on next `find` or `install` (taps are re-fetched on use when stale).
+
+To accept community submissions, open PRs against the tap repo. Review the linked skill repo, set `trust.verified: true` if satisfied, merge.
+
+## Authentication for private taps
+
+Taps are pulled with `git`. For private repos, configure git auth normally — SSH keys, an HTTPS credential helper, or `git config` credentials. Skilltap shells out to `git` directly and inherits the user's auth (no library, no token in config).

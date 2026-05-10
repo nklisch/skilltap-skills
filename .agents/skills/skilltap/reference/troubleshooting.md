@@ -1,144 +1,200 @@
 # Troubleshooting
 
-## "agent mode is not enabled" / agentMode: false
+## "Legacy config detected — run 'skilltap migrate' to upgrade"
 
-**Symptom:** `skilltap status --json` returns `"agentMode": false`, or a command reports that agent mode is not enabled.
+**Symptom:** Any command fails with `Legacy config detected — run 'skilltap migrate' to upgrade` (or a soft hint: `↑  Legacy state detected. Run 'skilltap migrate' to upgrade.`).
 
-**Cause:** The `agent-mode.enabled` config flag is `false` (the default).
+**Cause:** A pre-v2 `config.toml`, `installed.json`, or `plugins.json` exists. `loadConfig` hard-fails on legacy schema markers (per-mode `[security]`, `[agent-mode]`, `preset = ...`, `require_scan`, etc.).
 
-**Fix:** The user must run `skilltap config agent-mode` in an interactive terminal. This is TTY-only — the agent cannot run it.
+**Fix:** Run `skilltap migrate` once on this machine. It collapses per-mode `[security.human]` / `[security.agent]` blocks into a flat `[security]` block (stricter values win), extracts operational keys to `[scanner]`, drops `[agent-mode]`, and consolidates `installed.json` + `plugins.json` into `state.json`. Originals are renamed to `*.v1.bak`.
 
-Tell the user: "Please run `skilltap config agent-mode` in your terminal to enable agent mode, then retry."
+```bash
+skilltap migrate
+```
 
-## SECURITY ISSUE FOUND — INSTALLATION BLOCKED
+If `migrate` reports HTTP taps in your config, they need to be removed or converted manually before migration completes — skilltap is git-only for taps as of v2.
 
-**Symptom:** Exit 1 with a multi-line block starting with `SECURITY ISSUE FOUND — INSTALLATION BLOCKED`.
+## "skilltap requires a TTY for the dashboard"
 
-**Rules:**
-1. Relay the entire block verbatim to the user. Do not summarize.
-2. Do not retry the install.
-3. Do not pass `--skip-scan` — it will be rejected if `require_scan = true` (the default).
-4. Do not suggest disabling security settings.
+**Symptom:** Bare `skilltap` invocation prints this error and exits 1.
 
-The user must inspect the flagged file and lines manually and decide whether to install outside of agent-mode constraints via `skilltap install <url>` in their terminal.
+**Cause:** Bare `skilltap` (no subcommand) opens the Ink-based TUI. Without a TTY (piped, redirected, agent-driven), it refuses.
 
-## "Skill 'X' not found"
+**Fix:** Use `skilltap status [--json]` for headless output:
 
-**Symptom:** `ERROR: Skill 'X' not found` or a skills info command returns nothing.
+```bash
+skilltap status              # plain text dashboard
+skilltap status --json       # machine-readable
+```
 
-**Diagnosis steps:**
-1. Run `skilltap skills --json` to list all installed skills and check spelling.
-2. Check scope: `skilltap skills --project` and `skilltap skills --global` separately — the skill may be installed in the other scope.
-3. Check if the skill is disabled: `skilltap skills --disabled`.
+## SECURITY ISSUE FOUND / "--strict" warning block
 
-**Fix:** Install the skill with the correct scope, or pass `--project`/`--global` to the command to target the right scope.
+**Symptom:** Install fails with a warning block listing file:line, raw + visible content, decoded base64, etc., followed by `error: Security warnings found (strict mode). Aborting install.` or `Security warnings found and stdin is not a TTY (cannot prompt).`
 
-## "Plugin 'X' is not installed"
+**Rules when an agent sees this:**
 
-**Symptom:** `plugin info` or `plugin toggle` reports the plugin is not installed.
+1. **Stop.** Exit 1 is intentional.
+2. **Relay the entire warning block verbatim** to the user. Do not summarize.
+3. **Do not retry with `--skip-scan`** without the user explicitly authorizing it.
+4. **Do not advise disabling security settings** as a default workaround.
 
-**Diagnosis steps:**
-1. Run `skilltap plugin --json` to list all installed plugins.
-2. Check scope: `skilltap plugin --project` and `skilltap plugin --global` separately.
+The user must inspect the flagged file and lines manually. To install anyway after review, they can pass `--skip-scan` themselves, set `[security].on_warn = "install"` (default), or add a matching glob to `[security].trust`.
 
-**Fix:** Install the plugin in the correct scope, or pass the right scope flag to the plugin command.
+## "skill 'X' not found"
+
+**Symptom:** `info <name>` or `remove skill <name>` reports the skill is not found.
+
+**Diagnosis:**
+1. Run `skilltap status --json` to list everything and check spelling.
+2. Check both scopes: `skilltap status --global` and `skilltap status --project` separately — the skill may be in the other one.
+3. Check if the skill is disabled: `skilltap status --disabled`.
+4. Check if it's plugin-owned: `skilltap status --json` and look for the name under `plugins[].components[]`. If so, it is NOT in `state.skills[]` — use plugin commands.
+
+**Fix:** Pass `--global` / `--project` to target the right scope, or use plugin commands for plugin components.
+
+## "Cannot remove: skill is a plugin component"
+
+**Symptom:** `remove skill <name>` errors with this message.
+
+**Cause:** The skill is owned by a plugin (lives in `state.plugins[].components[]`, not `state.skills[]`).
+
+**Fix:**
+- To remove the entire plugin: `skilltap remove plugin <plugin-name>`.
+- To disable just the one skill component: `skilltap toggle plugin <plugin-name>:<skill-name>`.
+
+Use `skilltap info <plugin-name>` to find the right plugin and component name.
 
 ## Skill installed but agent can't find it
 
-**Symptom:** A skill is listed by `skilltap skills` but the agent (e.g. Claude Code) does not load it.
+**Symptom:** `skilltap status` lists the skill, but the agent (Claude Code, Cursor, etc.) does not load it.
 
-**Cause:** The agent-specific symlink is missing. Skilltap installs to `.agents/skills/` canonically but only creates agent-dir symlinks if `--also <agent>` was passed at install time.
+**Cause:** The per-agent symlink is missing. skilltap installs to `.agents/skills/` canonically; per-agent dirs (`.claude/skills/`, `.cursor/skills/`) only get a symlink if `--also <agent>` was passed at install time (or `[defaults] also = [...]` is set in config).
 
-**Diagnosis:** Run `skilltap doctor` — it checks agent symlinks and reports broken or missing ones.
+**Diagnosis:** `skilltap doctor` reports broken or missing per-agent symlinks.
 
-**Fix:** Re-run the install with `--also <agent>` to create the symlink:
+**Fix:** Re-run install with `--also <agent>`:
+
 ```bash
-skilltap install <source> --also claude-code
+skilltap install skill <source> --also claude-code
 ```
-Or run `skilltap doctor --fix` to repair broken symlinks automatically.
 
-## installed.json parse failure
+Or repair via doctor:
 
-**Symptom:** Any skilltap command fails with a JSON parse error mentioning `installed.json`.
+```bash
+skilltap doctor --fix
+```
 
-**Diagnosis:** The JSON file is malformed (most commonly from a hand edit).
+## state.json parse failure
 
-**Steps:**
-1. Run `skilltap doctor` — it will report the exact parse error.
-2. Advise the user to inspect and fix the file at the path reported by doctor (typically `~/.config/skilltap/installed.json` or `<project>/.agents/installed.json`).
-3. After fixing, run `skilltap doctor` again to confirm.
+**Symptom:** Any skilltap command fails with a JSON parse error mentioning `state.json`.
+
+**Diagnosis:** The file is malformed (most commonly from a hand edit).
+
+**Fix:**
+1. Run `skilltap doctor` — it will report the exact parse error and the file path.
+2. Inspect and fix the JSON at the path reported by doctor (`~/.config/skilltap/state.json` for global, `<project>/.agents/state.json` for project).
+3. Re-run `skilltap doctor` to confirm.
+
+The `version` field must remain `2`. A reasonable empty-state recovery file is:
+
+```json
+{ "version": 2, "skills": [], "plugins": [], "mcpServers": [] }
+```
+
+## "skilltap.toml is corrupt"
+
+**Symptom:** `install --scope project` fails with `skilltap.toml is corrupt: <details>` and a hint to run `skilltap doctor --fix`.
+
+**Behavior by output mode:**
+- **TTY:** install backs up the corrupt file to `skilltap.toml.bak`, resets to empty, logs the recovery, then proceeds.
+- **Non-TTY:** install refuses and exits 1. No side effects.
+
+**Fix (non-TTY):** run `skilltap doctor --fix` to back up + reset, then retry the install.
 
 ## MCP server did not appear in agent
 
-**Symptom:** A plugin was installed but its MCP server is not showing up in the agent's MCP list.
+**Symptom:** A plugin (or standalone MCP) was installed but the server is not showing up in the agent's MCP list.
 
 **Diagnosis:**
-1. Run `skilltap plugin info <name> --json` and check the component's `active` field.
-2. If `active: false`, the MCP component is toggled off.
+1. Run `skilltap info <name> --json` and check the component's `active` field.
+2. If `active: false`, the component is toggled off.
+3. If `active: true`, check the agent's config file directly (`~/.claude/settings.json`, `~/.cursor/mcp.json`, etc.) for the namespaced key `skilltap:<plugin>:<server>` or `skilltap:standalone:<name>`.
+4. Run `skilltap doctor` — the "MCP injection consistent" check verifies that every active MCP record has a matching agent-config entry.
 
-**Fix:**
+**Fix (toggle case):**
 ```bash
-skilltap plugin toggle <name> --mcps
+skilltap toggle plugin <name>:<server-name>     # one component
+# or
+skilltap toggle plugin <name> --mcps            # all MCPs in the plugin (TTY only)
 ```
-
-This flips the MCP components' active state. If they were `false`, they become `true` and are re-injected into the agent config file.
-
-If the component is already `active: true` but the server still doesn't appear, the agent config file injection may have failed. Run `skilltap doctor` to check agent config file integrity.
 
 ## Modified agent config and want to recover pre-skilltap state
 
-**Symptom:** After plugin install, `~/.claude/settings.json` (or equivalent) was modified and the user wants to restore the original.
+**Symptom:** After plugin / MCP install, `~/.claude/settings.json` (or equivalent) was modified and the user wants to restore the original.
 
-**Recovery:** Before the first plugin install modified any config file, skilltap wrote a backup:
+**Recovery:** Before the first plugin / MCP install modified any config file, skilltap wrote a backup:
 
 ```
 ~/.claude/settings.json.skilltap.bak
 ```
 
-The user can copy this backup back:
+Restore it:
+
 ```bash
 cp ~/.claude/settings.json.skilltap.bak ~/.claude/settings.json
 ```
 
-Note: this restores the file to its pre-skilltap state. Any plugins that were working will stop working (MCP entries removed).
+Note: this restores the file to its pre-skilltap state. Any plugins or standalone MCPs that were working will stop working until reinstalled.
 
-## --skip-scan rejected
+## "--skip-scan" rejected / ignored
 
-**Symptom:** `ERROR: --skip-scan is not allowed when require_scan is enabled`.
+**Behavior:** `--skip-scan` is accepted on `install skill` and `install plugin`. It is NOT a mutually-exclusive opposite of `--strict` — passing both is a CLI error in some commands. There is no longer a `require_scan` config key (that was a v0.x agent-mode concept).
 
-**Cause:** `security.agent.require_scan = true` (the default) rejects `--skip-scan` in agent mode.
+**If `--skip-scan` is silently not skipping:** check whether the source matches a `[security].trust` glob — those skip scanning regardless. Also check `[security].scan = "none"`, which disables scanning globally.
 
-**Do not:** Try to pass `--skip-scan` again or advise the user to set it.
+## Plugin capture conflict (cross-source)
 
-**Tell the user:** The security policy requires all installs to be scanned. If they want to install this skill without a scan, they must:
-1. Run `skilltap config security` in their terminal to change the agent security policy.
-2. Or install manually in their terminal (human mode allows more flexibility).
+**Symptom:** `install plugin <source>` errors in non-interactive mode with `cross-source capture conflict: <name> is installed from <other-source>; rerun with --force-capture to override or --no-capture to install side-by-side`.
 
-## skill remove fails on plugin-owned skill
+**Cause:** A plugin component shares a name with an existing standalone, but the standalone came from a different canonical source.
 
-**Symptom:** `skilltap skills remove <name>` reports the skill is not found or does nothing, even though the skill directory exists.
+**Fix:**
+- `--force-capture`: capture anyway (replaces the standalone with the plugin's copy). Use only when you intend to migrate the standalone into the plugin.
+- `--no-capture`: skip capture; install side-by-side. The two coexist with separate records.
+- In TTY mode, you'll get an interactive prompt instead of the error.
 
-**Cause:** The skill is owned by a plugin and is tracked in `plugins.json`, not `installed.json`. `skills remove` only operates on records in `installed.json`.
+## `sync` reports drift but everything looks installed
 
-**Fix:** Use plugin commands instead:
-- To remove the entire plugin: `skilltap plugin remove <plugin-name>`
-- To disable just the skill component: `skilltap plugin toggle <plugin-name> --skills` (check `plugin info` first to verify current state)
+**Diagnosis:** Run `skilltap sync` (no `--apply`) to see the drift breakdown. Common causes:
+
+- `lock-stale`: the locked SHA differs from on-disk. Run `sync --apply` to reinstall to lockfile.
+- `ref-mismatch`: the manifest range differs from the lockfile pin. Manifest is source of truth; `sync --apply` updates the lockfile.
+- `lock-orphan`: lockfile entry with no manifest declaration. Drop with `sync --apply`.
+- `lock-missing`: installed but no lockfile entry. Backfill with `sync --apply`.
+
+After `sync --apply`, all three (manifest, lockfile, state) should agree. Run `skilltap doctor` to verify.
 
 ## Doctor categories
 
 `skilltap doctor` checks:
-- **git** — git is available on PATH
-- **config** — `config.toml` loads and parses without error
-- **dirs** — required directories exist and are accessible
-- **installed.json** — parses without error; skill directories exist
-- **skill integrity** — each installed skill has a valid SKILL.md
-- **agent symlinks** — per-agent symlinks point to existing skill dirs
-- **taps** — configured taps are reachable and valid
-- **agent CLIs** — `security.agent_cli` path (if set) is executable
-- **npm** — npm is available (if npm-sourced skills are installed)
+
+- **git** — `git` is on PATH.
+- **config** — `config.toml` loads and parses; no legacy keys.
+- **dirs** — required directories exist and are accessible.
+- **state** — `state.json` schema valid; v0.x state files (`installed.json`, `plugins.json`) trigger an "orphan v1 state" finding pointing at `migrate`.
+- **skills** — every `state.skills[]` record has a directory on disk; every directory on disk is tracked or unmanaged.
+- **symlinks** — per-agent symlinks resolve to their canonical install dirs.
+- **taps** — each configured tap's git URL is reachable.
+- **manifest drift** — informational; `sync` is the executor.
+- **lockfile drift** — informational; `sync --apply` reconciles.
+- **plugin manifests** — every plugin's manifest schema resolves.
+- **MCP injection** — every active MCP record has a matching agent-config entry; no stale `skilltap:` entries.
+- **capture collisions** — plugin standalones still on disk (eligible for capture).
+- **Claude Code overlap** — skills installed both by skilltap and by Claude Code's own plugin system.
 
 `skilltap doctor --fix` repairs:
-- Broken symlinks (removes and recreates)
-- Orphaned records (removes `installed.json` entries with missing skill directories)
+- Broken symlinks (removes and recreates).
+- Orphaned records (removes `state.json` entries with missing skill directories).
+- Corrupt `skilltap.toml` (backs up + resets to empty).
 
-It does not make destructive changes to actual skill data.
+`--fix` exits 0 when all fixes succeed; only non-fixable failures cause exit 1.

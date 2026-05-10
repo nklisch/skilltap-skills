@@ -1,142 +1,224 @@
-# Installing Skills and Plugins
+# Installing Skills, Plugins, and MCP Servers
+
+Every install is a typed subcommand:
+
+```bash
+skilltap install skill   <source> [flags]
+skilltap install plugin  <source> [flags]
+skilltap install mcp     <source> [flags]
+```
+
+The type is required — there is no auto-detect across types. If a source has a SKILL.md but no plugin manifest, `install plugin` errors with a hint to use `install skill` (and vice versa).
 
 ## Source formats
 
-| Format | Example | Notes |
+The same source forms work for `install skill`, `install plugin`, and `install mcp`:
+
+| Form | Example | Notes |
 |---|---|---|
-| GitHub shorthand | `user/repo` | Uses `default_git_host` config (default `https://github.com`) |
-| GitHub explicit | `github:user/repo` | Always GitHub |
-| Any HTTPS git URL | `https://gitea.example.com/x/y` | Any git host |
-| SSH URL | `git@github.com:user/repo.git` | Uses SSH auth |
-| Tap skill name | `skill-name` | Searches all configured taps |
-| Tap skill, pinned | `skill-name@v1.2.0` | Pins to a ref |
-| Tap plugin | `tap-name/plugin-name` | First segment matches a tap name |
-| Local directory | `./local-path` | Links by default (no copy) |
-| npm | `npm:@scope/skill-name` | From npm registry |
-| npm pinned | `npm:@scope/skill-name@1.2.3` | Pinned npm version |
+| Tap-resolved name | `commit-helper` | Bare name; searches all configured taps. Fails fast if no taps. |
+| Tap name + version | `commit-helper@v1.2.0` | Pins to a git ref. |
+| Tap-defined plugin | `tap-name/plugin-name` | First segment must match a known tap name exactly. |
+| GitHub shorthand | `owner/repo` | Resolves via `default_git_host` (default `https://github.com`). |
+| GitHub explicit | `github:owner/repo` | Always GitHub regardless of `default_git_host`. |
+| GitHub @ ref | `owner/repo@v1.2.0` | Branch or tag suffix. |
+| Plugin selector | `owner/repo:plugin-name` | Plugin only — picks one plugin from a multi-plugin repo. |
+| Plugin all | `owner/repo:*` | Plugin only — installs every publishable plugin in the repo. |
+| Plugin @ ref + selector | `owner/repo@v1.0:frontend` | Both can compose. |
+| Any HTTPS URL | `https://gitea.example.com/x/y` | Any git host. |
+| SSH URL | `git@github.com:owner/repo.git` | Uses your local git auth. |
+| npm package | `npm:@scope/name` | npm registry. Pin with `@version` suffix: `npm:@scope/name@1.2.3` or `npm:@scope/name@^1.0`. |
+| Local directory | `./path` or `/abs` or `~/path` | Symlinked, not copied. |
 
-## Decision tree: choosing what to pass
+## Scope: smart default
 
-1. **Does the user give a GitHub URL or `user/repo`?** → use shorthand or full URL.
-2. **Does the user give a skill name?** → use bare name (tap lookup). If a tap name is specified as a prefix, use `tap-name/skill-name`.
-3. **Is it a local directory?** → use `./path`. This creates a symlink, not a copy.
-4. **Is it on npm?** → use `npm:@scope/name`.
-5. **Does it need a specific branch or tag?** → add `--ref <ref>` (git sources only; use `@version` suffix for tap lookups).
+When `--scope` is not passed and `[defaults] scope` is empty in config, scope is inferred from the cwd:
 
-## Choosing scope
+- **Inside a git repo** → `project` → installs to `<project>/.agents/skills/{name}/`.
+- **Outside a git repo** → `global` → installs to `~/.agents/skills/{name}/`.
 
-Pass exactly one of:
-- `--project` — installs to `.agents/skills/` in the current project
-- `--global` — installs to `~/.agents/skills/`
+The inferred scope is reported in install output (e.g. `scope: project (inferred from cwd)`). Override with `--scope project` or `--scope global`.
 
-If neither is passed, the configured default (`agent-mode.scope`, default `project`) is used. When in doubt, use `--project` for project-specific tools and `--global` for tools needed across all projects.
+`install skill`, `install plugin`, and `install mcp` all honor smart-scope.
 
-## Symlinking to agent directories (`--also`)
+## Per-agent symlinks: `--also`
 
-Use `--also <agent>` to create a symlink in the per-agent skills directory so that agent can load the skill. Repeatable for multiple agents.
+Use `--also <agent>` to create a symlink in the per-agent skills directory so that agent loads the skill. Repeatable for multiple agents.
 
-Valid agent values: `claude-code`, `cursor`, `codex`, `gemini`, `windsurf`.
+Valid agent IDs (single source of truth in `core/src/symlink.ts`):
 
-Example: `skilltap install user/repo --project --also claude-code --also cursor`
+| ID | Global symlink | Project symlink |
+|---|---|---|
+| `claude-code` | `~/.claude/skills/<name>` | `<project>/.claude/skills/<name>` |
+| `cursor` | `~/.cursor/skills/<name>` | `<project>/.cursor/skills/<name>` |
+| `codex` | `~/.codex/skills/<name>` | `<project>/.codex/skills/<name>` |
+| `gemini` | `~/.gemini/skills/<name>` | `<project>/.gemini/skills/<name>` |
+| `windsurf` | `~/.windsurf/skills/<name>` | `<project>/.windsurf/skills/<name>` |
 
-If the user asks to install for a specific agent (e.g. "install for Claude Code"), pass `--also claude-code`.
+If `[defaults] also = ["claude-code"]` is set in config, every install applies that list automatically.
 
-## Install flags reference
+For MCP installs, `--also` injects the MCP entry into each agent's settings file (`~/.claude/settings.json`, `~/.cursor/mcp.json`, etc.) instead of creating a symlink.
 
-| Flag | Effect |
-|---|---|
-| `--project` | Install to project scope |
-| `--global` | Install to global scope |
-| `--also <agent>` | Symlink into per-agent dir (repeatable) |
-| `--ref <ref>` | Branch or tag to checkout (git sources) |
-| `--quiet` | Suppress per-step install details |
-| `--json` | JSON output |
-| `--yes` | Auto-accept (no-op in agent mode — already auto-applied) |
-| `--strict` | Hard-fail on warnings (no-op in agent mode — already strict) |
-| `--no-strict` | Override fail-on-warn (NO EFFECT in agent mode) |
-| `--semantic` | Force Layer 2 semantic scan |
-| `--skip-scan` | Skip security scan (REJECTED if require_scan=true) |
+## Install flags
+
+| Flag | skill | plugin | mcp | Effect |
+|---|---|---|---|---|
+| `--scope project\|global` | ✓ | ✓ | ✓ | Override smart-scope inference. |
+| `--also <agent>` (repeatable) | ✓ | ✓ | ✓ | Per-agent symlink (skills) or config injection (mcp). |
+| `--ref <ref>` | ✓ | ✓ | — | Branch / tag for git sources. |
+| `--yes`, `-y` | ✓ | ✓ | ✓ | Auto-accept prompts (multi-skill selection, "install?", "save defaults?"). Does NOT bypass scan warnings. |
+| `--strict` | ✓ | ✓ | — | Hard-fail on any security warning (one-shot `on_warn = "fail"`). |
+| `--skip-scan` | ✓ | ✓ | — | Skip security scanning entirely. Use only for sources you've vetted. |
+| `--semantic` | ✓ | ✓ | — | Force Layer 2 semantic scan in addition to static. |
+| `--quiet` | ✓ | ✓ | ✓ | Suppress per-step install details (overrides `verbose = true`). |
+| `--json` | ✓ | ✓ | ✓ | Newline-delimited JSON event output. Auto-selected when stdout is not a TTY. |
+| `--force-capture` | — | ✓ | — | Auto-capture every same-source standalone match into the new plugin (non-interactive). |
+| `--no-capture` | — | ✓ | — | Disable plugin capture; standalones stay in place. Mutually exclusive with `--force-capture`. |
+
+## Decision tree at install time
+
+```
+source
+  │
+  ├── scope? ┬── --scope project ─→ project
+  │          ├── --scope global ──→ global
+  │          ├── [defaults].scope set ─→ that value
+  │          └── neither ─────────→ smart default: in git repo → project, else global
+  │
+  ├── agents? ┬── --also passed ────────────────→ use flag value(s)
+  │           ├── --yes ──────────────────────→ use [defaults].also
+  │           ├── [defaults].also set ────────→ use it (no prompt)
+  │           └── none of the above + TTY ────→ prompt "Which agents?"
+  │
+  → resolve adapter (tap → git URL → npm → local → github shorthand)
+  → clone / fetch / copy
+  → discover skills (skill) or detect plugin manifest (plugin)
+                 │
+                 ├── single skill ────→ auto-select
+                 ├── multi + --yes ───→ auto-select all
+                 └── multi + TTY ─────→ prompt "Which skills to install?"
+                                                     │
+                                                ┌─ source matches [security].trust glob? → skip scan ─┐
+                                                │ OR --skip-scan? OR [security].scan = "none"?         │
+                                                │                                                       │
+                                                → static scan (Layer 1)                                 │
+                                                │                                                       │
+                                                ├─ clean ────────────────────────────────────────────►─┤
+                                                │                                                       │
+                                                ├─ warnings ┬── --strict OR on_warn = "fail" → ABORT (exit 1)
+                                                │           ├── on_warn = "install" → log + proceed
+                                                │           └── on_warn = "prompt" → "Install anyway?" (TTY)
+                                                │                                                       │
+                                                └─ --semantic OR scan = "semantic" → Layer 2            │
+                                                                                                        │
+                                                     ▼
+                                                ── --yes? ──→ install silently
+                                                └── else + TTY → prompt "Install? (Y/n)"
+```
+
+## Multi-skill repos
+
+A repo can contain multiple `SKILL.md` files. Discovery scans these locations in priority order: `SKILL.md` at root → `.agents/skills/*/SKILL.md` → `skills/*/SKILL.md` → `plugins/*/skills/*/SKILL.md` → `.{claude,cursor,codex,gemini,windsurf}/skills/*/SKILL.md` → deep `**/SKILL.md` (deep scan triggers a confirmation prompt unless `--yes`).
+
+In TTY mode, the user picks which skills to install. With `--yes` (or non-TTY mode), all discovered skills are auto-selected.
 
 ## Plugin auto-detection
 
-When `install` clones a repo, plugin detection runs before skill scanning:
+For `install plugin`, detection runs **before** skill scanning, in this priority order:
 
-1. `.claude-plugin/plugin.json` found → install as Claude Code plugin
-2. `.codex-plugin/plugin.json` found → install as Codex plugin
-3. Neither found → standard skill scanning
+1. `.skilltap/<name>.toml` — native skilltap plugin format. Multi-plugin repos use multiple `.toml` files here.
+2. `.claude-plugin/plugin.json` — Claude Code plugin format.
+3. `.codex-plugin/plugin.json` — Codex plugin format.
 
-In agent mode, the "Install as plugin?" prompt auto-accepts. No flag needed.
+If none found, `install plugin` errors with a hint to use `install skill`.
 
 Plugin components installed:
-- **Skills** → `.agents/skills/<name>/`, tracked in `plugins.json` (not `installed.json`)
-- **MCP servers** → injected into per-agent config files, namespaced as `skilltap:<plugin>:<server>`. Two server types:
-  - `stdio`: command / args / env
-  - `http`: url / headers (added v0.10.8)
-  - Variables `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PLUGIN_DATA}` are substituted at injection time.
-- **Agent definitions** → `.claude/agents/<name>.md` (Claude Code only, currently)
 
-A backup of each agent config file is written before the first modification: `<config-path>.skilltap.bak` (e.g. `~/.claude/settings.json.skilltap.bak`). This is a one-time backup; subsequent plugin changes do not overwrite it.
+- **Skills** → `.agents/skills/<name>/`, recorded under `state.plugins[].components[]` (NOT in `state.skills[]`).
+- **MCP servers** → injected into per-agent config files, namespaced as `skilltap:<plugin>:<server>`. Two server types: `stdio` (command/args/env) and `http` (url/headers).
+- **Agent definitions** → `.claude/agents/<name>.md` (Claude Code only currently). These are file copies, not symlinks.
 
-Removal preserves entries not namespaced with `skilltap:` (user-added MCPs are not touched).
+A backup of each agent config file is written before the **first** modification: `<config-path>.skilltap.bak` (e.g. `~/.claude/settings.json.skilltap.bak`). One-time backup; subsequent plugin changes don't overwrite it.
 
-See [state-files.md](state-files.md) for the `plugins.json` schema and [filesystem.md](filesystem.md) for exact paths.
+Removal preserves entries not namespaced with `skilltap:` (user-added MCP servers are never touched).
 
-## Multi-skill repositories
+## Multi-plugin repos
 
-If a repo contains multiple `SKILL.md` files, skilltap detects them all. In agent mode, all skills are auto-selected for installation without prompting.
+A repo can publish more than one plugin via multiple `.skilltap/<name>.toml` manifests with `publish = true`:
+
+| Form | Behavior |
+|---|---|
+| `install plugin owner/repo` | Single-plugin repo: installs that one. Multi-plugin repo: TTY picker, or non-TTY error `multiple plugins available: <name1>, <name2>; specify with owner/repo:<name>`. |
+| `install plugin owner/repo:plugin-name` | Installs the named plugin directly. |
+| `install plugin owner/repo:*` | Installs every publishable plugin from the repo. |
+
+Selectors compose with `@ref` and full URLs: `owner/repo@v1.2.0:frontend`, `https://gitea.example.com/owner/repo:*`, `git@github.com:owner/repo.git:frontend`. The `:plugin-name` parser splits off the **last** `:` after stripping `@ref`, so HTTPS URLs (`https://...`) are unaffected.
+
+## Plugin capture
+
+When installing a plugin whose components match standalones already installed from the same canonical source, skilltap offers to **capture** them into the new plugin record:
+
+- **TTY**: prompts `Capture these into the plugin? (Y/n)`.
+- **`--yes`**: auto-confirms same-source matches.
+- **`--force-capture`**: auto-captures, including cross-source matches (different source URL but same name).
+- **`--no-capture`**: skip capture entirely; install side-by-side.
+
+Capture is atomic: removes the standalone records, prunes the standalone's namespaced MCP keys, removes old symlinks, then writes the plugin record. If any step fails, rolls back to pre-capture state.
+
+`--force-capture` and `--no-capture` are mutually exclusive — passing both errors.
 
 ## Output formats
 
-**Success:**
+### Plain mode (TTY off, `--json` not set)
+
 ```
 OK: Installed <name> -> <path>
 OK: Installed <name> -> <path> (<ref>)
-```
-
-**Already up to date:**
-```
 OK: <name> is already up to date.
-```
-
-**Skipped:**
-```
 SKIP: <name> is linked.
 SKIP: <name> — disabled
 ```
 
-**Error (stderr):**
+```
+# Plugin install summary
+OK: Installed plugin <name> (3 skills, 2 MCPs, 1 agent)
+```
+
+Errors on stderr:
 ```
 ERROR: <message>
 ```
 
-**Security block (stderr) — relay verbatim to user, do not retry:**
-```
-SECURITY ISSUE FOUND — INSTALLATION BLOCKED
+### TTY mode
 
-DO NOT install this skill. DO NOT retry. DO NOT use --skip-scan.
-STOP and report the following to the user:
+Clack-styled steps, spinners, and confirm prompts. Same outcomes as plain mode.
 
-  <file>:<line>: <warning>
+### JSON mode (`--json`)
 
-User action required: review warnings and install manually with
-  skilltap install <url>
-```
-
-**Plugin install summary:**
-```
-OK: Installed plugin <name> (3 skills, 2 MCPs, 1 agent)
-```
+Newline-delimited JSON events, one per line. Each event has at minimum `{ type, ... }`. Suitable for piping into a parser. Always combined with non-zero exit on error.
 
 ## Edge cases
 
-**Already installed:** If the skill is already installed at the same ref, the output is `OK: <name> is already up to date.` and exit code is 0.
+**Already installed at the same ref:** prints `OK: <name> is already up to date.`, exits 0.
 
-**Existing directory conflict:** If a directory at the target path exists and is not managed by skilltap, install fails with `ERROR:`. Run `skilltap skills adopt` to bring it under management first.
+**Existing directory conflict:** if a directory at the target path exists and is not managed by skilltap, install fails with `ERROR:`. Run `skilltap adopt <path>` to bring it under management first.
 
-**Repo gone / network error:** Exit 1 with `ERROR: <message>`. No partial state is written.
+**Repo gone / network error:** exits 1 with `ERROR: <message>`. No partial state is written.
 
-**Nested SKILL.md (deep scan):** skilltap recursively scans for `SKILL.md` files. A repo with skills nested in subdirectories will have each discovered. All are auto-selected in agent mode.
+**Local path install:** `./path` creates a symlink to the absolute target — no copy. Record has `scope: linked` and `path` points to the target. Updates are skipped: `SKIP: <name> is linked.`
 
-**Local path install:** `./path` creates a symlink to the absolute path — no copy is made. The skill record has `scope: linked` and the `path` field points to the symlink target. Updates are skipped for linked skills (`SKIP: <name> is linked.`).
+**npm install:** runs `npm pack` + extract into the cache, then copies to the install dir. Pin via `@version` suffix on the package name (`npm:@scope/name@1.2.3`). Updates compare version strings, not commit SHAs.
 
-**npm install:** Runs `npm pack` + extract into the cache, then copies to the skills dir. Pinning via `@version` suffix controls the exact package version.
+**Corrupt `skilltap.toml` in `--scope project`:** in TTY mode, install backs up to `skilltap.toml.bak` and resets to empty. In non-TTY mode, install refuses with a hint: `Run 'skilltap doctor --fix' to back up the corrupt manifest and reset to empty, then retry.`
+
+**Source matches `[security].trust` glob:** scan is skipped entirely (equivalent to `--skip-scan` for that one source). Use only for sources you've vetted at the org level.
+
+**Security warnings under `--yes`:** `--yes` does NOT auto-confirm scan warnings. Behavior is governed by `[security].on_warn`:
+
+| Setting | Behavior on warnings (with `--yes`) |
+|---|---|
+| `prompt` (default in TTY) | Non-TTY → fail. TTY → prompt despite `--yes`. |
+| `install` | Log warnings, proceed. |
+| `fail` (or `--strict`) | Hard fail, exit 1. |
+
+The full warning block (file:line, raw + visible content, decoded base64, etc.) is printed to stderr before the prompt or failure. See [non-interactive.md](non-interactive.md) for handling under automation.

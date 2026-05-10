@@ -1,112 +1,116 @@
 ---
 name: skilltap
 description: >
-  Install, update, remove, list, disable, enable, adopt, move, link, unlink,
-  configure, and inspect agent skills and plugins via the skilltap CLI.
-  Also: troubleshoot skilltap config or state, toggle plugin components
-  (MCPs, agent definitions, skills), manage taps for skill discovery,
-  run doctor checks, introspect installed.json or plugins.json, configure
-  security policy, and any other operation on skilltap-managed skills or plugins.
+  Install, update, remove, list, toggle, adopt, move, configure, and inspect
+  agent skills, plugins, and standalone MCP servers via the skilltap CLI.
+  Also: troubleshoot config or state, sync project manifest + lockfile,
+  manage taps for skill discovery, run doctor checks, configure security
+  policy, migrate from legacy state, and any other operation on
+  skilltap-managed content. Triggers on installing skills, managing plugins,
+  injecting MCP servers, or working with skilltap.toml / state.json /
+  config.toml.
 license: MIT
 ---
 
 # skilltap
 
-skilltap is a CLI for installing and managing AI-agent skills and plugins — think Homebrew for agent skills. It installs to `.agents/skills/`, is agent-agnostic, and supports multiple sources (GitHub, any git URL, npm, local paths, tap registries).
+skilltap is a CLI for installing and managing AI-agent skills, plugins, and MCP servers — think Homebrew for agent tooling. It installs to `.agents/skills/`, is agent-agnostic, and supports multiple sources (GitHub, any git URL, npm, local paths, taps).
 
-## Agent-mode gate (mandatory first step)
+## Mental model in three sentences
 
-Before any operation, check that agent mode is enabled:
+1. **Three artifact types**, each addressed explicitly: `skill` (a SKILL.md directory), `plugin` (a bundle of skills + MCPs + agent definitions), and `mcp` (a standalone MCP server). Every command takes the type as a subcommand: `install skill X`, `remove plugin Y`, `update mcp Z`.
+2. **Two scopes**: `global` (lives under `~/.agents/`) and `project` (lives under `<project>/.agents/`). Smart default: inside a git repo → `project`; outside → `global`. Override with `--scope project|global`.
+3. **One state file per scope** (`state.json`) plus an optional **project manifest + lockfile** (`skilltap.toml` + `skilltap.lock`) that gets committed to source control for team sync.
 
-```bash
-skilltap status --json
-```
-
-Parse the output and check `agentMode === true`. If it is `false`, **stop**. Tell the user:
-
-> Agent mode is not enabled. Please run `skilltap config agent-mode` in your terminal to enable it, then retry.
-
-Do NOT proceed with any install, update, or management command until agent mode is confirmed enabled.
-
-See [reference/agent-mode.md](reference/agent-mode.md) for the full output schema and rules.
+There is **no agent mode**, no `--agent` flag, and no `SKILLTAP_AGENT` env var. Output mode is auto-decided from TTY detection plus `--json`. For agent / CI / piped use, pass `--yes` (auto-accept prompts) and optionally `--json` (machine-readable events).
 
 ## Quick decision rules
 
-| Asked to do... | Run this |
+| Asked to do… | Run this |
 |---|---|
-| Install a skill or plugin by GitHub user/repo | `skilltap install user/repo [--project\|--global]` |
-| Install from tap by name | `skilltap install skill-name [--project\|--global]` |
-| Install from npm | `skilltap install npm:@scope/name` |
-| Install a local directory | `skilltap install ./path/to/skill` |
-| Update one skill | `skilltap update skill-name` |
-| Update all skills | `skilltap update` |
-| List all skills | `skilltap skills [--project\|--global]` |
-| Get details on a skill | `skilltap skills info skill-name` |
-| Disable a skill | `skilltap skills disable skill-name` |
-| Enable a skill | `skilltap skills enable skill-name` |
-| Remove a skill | `skilltap skills remove skill-name` |
-| List plugins | `skilltap plugin [--project\|--global]` |
-| Get plugin details | `skilltap plugin info plugin-name` |
-| Toggle plugin components | `skilltap plugin toggle plugin-name [--skills\|--mcps\|--agents]` |
-| Remove a plugin | `skilltap plugin remove plugin-name` |
-| Check environment health | `skilltap doctor` |
-| Read a config value | `skilltap config get key` |
-| Write a config value | `skilltap config set key value` |
-| Check agent mode / security status | `skilltap status --json` |
+| Install a skill from GitHub | `skilltap install skill owner/repo` |
+| Install a plugin from GitHub | `skilltap install plugin owner/repo` |
+| Install one plugin from a multi-plugin repo | `skilltap install plugin owner/repo:plugin-name` |
+| Install all publishable plugins from a repo | `skilltap install plugin owner/repo:*` |
+| Install a tap-resolved skill by name | `skilltap install skill commit-helper` |
+| Install a standalone MCP server | `skilltap install mcp npm:@scope/server` |
+| Install from local dir (live link) | `skilltap install skill ./path` |
+| Install from npm | `skilltap install skill npm:@scope/name[@1.2.3]` |
+| Update everything | `skilltap update` |
+| Update one item | `skilltap update <type> <name>` |
+| Remove an item | `skilltap remove <type> <name> --yes` |
+| Disable / re-enable an item | `skilltap toggle <type> <name>` |
+| Disable one component of a plugin | `skilltap toggle plugin <name>:<component>` |
+| Show what's installed | `skilltap status [--json]` |
+| Show details on one item | `skilltap info <name> [--json]` |
+| Move a skill between scopes | `skilltap move <name> --scope project\|global` |
+| Bring an external dir under management | `skilltap adopt <path>` |
+| Reconcile manifest ↔ lockfile ↔ state | `skilltap sync [--apply]` |
+| Preview a source without installing | `skilltap try <type> <source>` |
+| Check environment health | `skilltap doctor [--fix] [--json]` |
+| Read / write config | `skilltap config get <key>` / `set <key> <value>` |
+| Find a skill | `skilltap find <query> [--json]` |
+| Migrate legacy config + state | `skilltap migrate` |
 
-## Command reference
+For the full command tree and examples, see [reference/installing.md](reference/installing.md) and [reference/managing.md](reference/managing.md).
 
-| Command | Purpose |
-|---|---|
-| `skilltap install <source>` | Install a skill or plugin (auto-detects plugin manifests) |
-| `skilltap update [name]` | Update installed skills; omit name to update all |
-| `skilltap skills` | List skills (managed + linked + unmanaged) |
-| `skilltap skills info <name>` | Show skill record details |
-| `skilltap skills remove [name...]` | Remove one or more skills |
-| `skilltap skills disable <name>` | Disable a skill (moves to `.disabled/`) |
-| `skilltap skills enable <name>` | Re-enable a disabled skill |
-| `skilltap skills adopt [name...]` | Adopt unmanaged skills under skilltap management |
-| `skilltap skills move <name>` | Move skill between scopes (`--project` / `--global`) |
-| `skilltap skills link <path>` | Symlink a local skill directory |
-| `skilltap skills unlink <name>` | Remove a linked skill |
-| `skilltap plugin` | List installed plugins |
-| `skilltap plugin info <name>` | Show plugin details and component states |
-| `skilltap plugin toggle <name>` | Flip component active states (`--skills` / `--mcps` / `--agents`) |
-| `skilltap plugin remove <name>` | Remove a plugin and all its components |
-| `skilltap status [--json]` | Agent-mode status report |
-| `skilltap doctor [--fix]` | Check environment and state; `--fix` repairs symlinks |
-| `skilltap config get [key]` | Read config value (any key) |
-| `skilltap config set <key> <value>` | Write config value (allowlisted keys only) |
-| `skilltap config agent-mode` | Toggle agent mode (TTY-only, call from terminal) |
-| `skilltap config security` | Configure security (TTY wizard or flags) |
-| `skilltap config telemetry` | Status / enable / disable telemetry |
-| `skilltap find [query]` | Search taps and skills.sh registry |
-| `skilltap tap` | Manage tap sources |
-| `skilltap create [name]` | Scaffold a new skill |
-| `skilltap verify [path]` | Validate a skill |
-| `skilltap self-update` | Update the CLI binary |
-| `skilltap completions <shell>` | Generate shell completions |
+## Common workflows
 
-Silent aliases (documented once — prefer canonical forms above): `list` → `skills`, `remove` → `skills remove`, `info` → `skills info`, `link` → `skills link`, `unlink` → `skills unlink`, `plugins` → `plugin`.
+### Install a skill into the current project
 
-## Important constraints in agent mode
+```bash
+# Inside a git repo — smart-scope picks `project`, no flag needed.
+skilltap install skill commit-helper --also claude-code
+```
 
-- `--yes` is auto-applied. Never pass it explicitly.
-- `--skip-scan` is rejected by default (require_scan enforced). Do not pass it.
-- `--no-strict` has no effect in agent mode.
-- Scope must be `--project` or `--global`. If neither is passed, the configured default (`agent-mode.scope`, default `project`) is used.
-- Plugin install prompts auto-accept. Multi-skill repos auto-select all skills.
-- Security warnings cause exit 1 with a `SECURITY ISSUE FOUND` block — relay verbatim to user, do not retry.
+`--also <agent>` creates the per-agent symlink (`.claude/skills/`, `.cursor/skills/`, etc.) so the named agent actually loads the skill. Repeatable. See [reference/filesystem.md](reference/filesystem.md) for the full path map.
+
+### Install everything declared in `skilltap.toml`
+
+```bash
+git pull
+skilltap sync --apply
+```
+
+`sync` reconciles the project manifest, lockfile, and on-disk state. With `--apply` it executes the diff via `install`/`remove`. See [reference/manifest.md](reference/manifest.md).
+
+### Install a plugin and toggle one component off
+
+```bash
+skilltap install plugin corp/dev-toolkit --scope global --yes
+skilltap toggle plugin dev-toolkit:test-generator   # disable just one component
+```
+
+`toggle plugin <name>:<component>` flips a single component's `active` state. `toggle plugin <name>` (no `:component`) opens a TUI scoped to that plugin's components.
+
+### Pipe-friendly install (CI, agent, scripts)
+
+```bash
+skilltap install skill owner/repo --scope project --yes --json
+```
+
+When stdout is not a TTY, output mode auto-switches to `plain` (no spinners, no colors). Adding `--json` upgrades it to newline-delimited JSON events. Adding `--yes` auto-accepts the "do it?" confirmation. Security warnings still gate the install (see below).
+
+## Constraints that bite
+
+- **`--yes` does not bypass security scanning.** Scan warnings still prompt (or fail under `--strict` / `on_warn = "fail"`). The only switches that skip scanning are `--skip-scan` per invocation, `[security].scan = "none"`, or a `[security].trust` glob match for the source.
+- **`--strict` and `--skip-scan` are mutually exclusive in spirit.** `--strict` = "abort on any warning" (one-shot `on_warn = "fail"`); `--skip-scan` = "don't even scan." Pick one.
+- **Plugin-owned skills are not in `state.skills[]`.** They live under `state.plugins[].components[]`. `remove skill <name>` on a plugin component errors with a hint pointing at `remove plugin <name>` or `toggle plugin <name>:<component>`.
+- **`--scope` is a value flag, not a boolean pair on `install`.** Use `--scope project` or `--scope global`. The boolean `--global` / `--project` pair only exists on `status` and `info` for filtering.
+- **Legacy state hard-fails at load.** If a config or state file from before v2 is present, `loadConfig` exits with an error pointing at `skilltap migrate`. Run that command once on each machine to translate.
+- **`skilltap.toml` corruption blocks project installs.** In TTY mode, install backs up to `skilltap.toml.bak`, resets to empty, and continues. In non-TTY mode it refuses with a hint to run `skilltap doctor --fix`.
+- **Bare `skilltap` opens the TUI.** That requires a TTY. From a pipe or non-interactive context, bare invocation errors with `skilltap requires a TTY for the dashboard.` — use `skilltap status` for headless output instead.
 
 ## Reference pages
 
-- [reference/installing.md](reference/installing.md) — Source formats, install decision tree, plugin auto-detection, output formats
-- [reference/managing.md](reference/managing.md) — Post-install skill and plugin management (list, disable, enable, remove, adopt, move, link, plugin commands)
-- [reference/agent-mode.md](reference/agent-mode.md) — Status check schema, flag rules, exit codes, output formats, security block handling
-- [reference/config.md](reference/config.md) — Full config.toml schema, settable vs blocked keys, config subcommands
-- [reference/state-files.md](reference/state-files.md) — installed.json and plugins.json schemas, field types, component union
-- [reference/filesystem.md](reference/filesystem.md) — Where everything lives on disk, globalBase resolution, symlink semantics
-- [reference/troubleshooting.md](reference/troubleshooting.md) — Error patterns and recovery steps
+- [reference/installing.md](reference/installing.md) — `install <type> <source>`, source formats, scope resolution, `--also`, plugin capture, multi-plugin syntax, output formats.
+- [reference/managing.md](reference/managing.md) — `update`, `remove`, `toggle`, `adopt`, `move`, `info`, listing via `status`, `try` (preview), `doctor`.
+- [reference/non-interactive.md](reference/non-interactive.md) — output modes (tty / plain / json), exit codes, `--yes` semantics, security policy under automation, removed-command errors.
+- [reference/manifest.md](reference/manifest.md) — `skilltap.toml` and `skilltap.lock` schemas, `sync` semantics, drift categories, `[[mcps]]` standalone entries.
+- [reference/config.md](reference/config.md) — full `config.toml` schema (flat `[security]`, `[scanner]`, `[defaults]`, `[updates]`, `[telemetry]`, `[[taps]]`), settable keys, `config security` flags.
+- [reference/state-files.md](reference/state-files.md) — `state.json` schema (`skills`, `plugins`, `mcpServers`), trust info, component union, hand-edit rules.
+- [reference/filesystem.md](reference/filesystem.md) — every path skilltap touches: canonical install dirs, per-agent symlinks, MCP injection points, backup files, cache.
+- [reference/troubleshooting.md](reference/troubleshooting.md) — error patterns and recovery (corrupt manifest, missing symlinks, plugin capture conflicts, security blocks, MCP injection problems).
 
-For skill discovery (find, tap management): load the `skilltap-find` skill.
-For authoring new skills or plugins: load the `skilltap-author` skill.
+For skill discovery (find, taps, registry): load the `skilltap-find` skill.
+For authoring new skills, plugins, or taps: load the `skilltap-author` skill.

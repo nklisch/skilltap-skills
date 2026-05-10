@@ -1,25 +1,29 @@
 # Tap Format Reference
 
-A tap is a curated index of skills and plugins — a `tap.json` file in a git repository. Think of it as a registry that maps short names to source repos. Users add a tap once (`skilltap tap add <name> <url>`) and then install from it by name (`skilltap install <skill-name>`).
+A tap is a curated index of skills and plugins — a `tap.json` file at the root of a git repository. Think of it as a registry that maps short names to source repos. Users add a tap once (`skilltap tap add <name> <url>` or `skilltap tap add owner/repo`) and then install entries from it by name.
 
 Taps can also embed complete plugin definitions inline, so a tap maintainer can ship everything in one file without authors needing separate plugin manifest repos.
+
+**Taps are git-only.** HTTP registry taps were removed in v2.
 
 ## Scaffold a tap
 
 ```bash
-skilltap tap init <name>
+skilltap tap init my-tap
 ```
 
 Creates:
 ```
-<name>/
+my-tap/
 ├── tap.json    (skeleton — edit this)
 └── .git/       (initialized)
 ```
 
 Set a remote and push. Users add it with:
 ```bash
-skilltap tap add <name> https://github.com/you/<name>
+skilltap tap add my-tap https://github.com/you/my-tap
+# or
+skilltap tap add you/my-tap
 ```
 
 ## `tap.json` schema
@@ -29,63 +33,65 @@ Source of truth: `packages/core/src/schemas/tap.ts`.
 ### Top-level fields
 
 | Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| `name` | string | yes | Tap identifier |
-| `description` | string | no | One-line summary |
-| `skills` | `TapSkill[]` | yes | Listed skills (may be empty array) |
-| `plugins` | `TapPlugin[]` | no | Inline plugin definitions (default `[]`) |
+|---|---|---|---|
+| `name` | string | yes | Tap identifier. |
+| `description` | string | no | One-line summary. |
+| `skills` | `TapSkill[]` | yes | Listed skills (may be empty). |
+| `plugins` | `TapPlugin[]` | no | Inline plugin definitions (default `[]`). |
 
 ### `TapSkill` fields
 
 | Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| `name` | string | yes | Skill name (must match `frontmatter.name` in the skill) |
-| `description` | string | yes | One-line description shown in `skilltap find` |
-| `repo` | string | yes | `owner/repo` shorthand or full URL |
-| `tags` | string[] | no | Category tags (default `[]`) |
-| `trust` | `TapTrust` | no | Verification metadata |
-| `plugin` | boolean | no | `true` if this entry is a plugin, not a skill (default `false`) |
+|---|---|---|---|
+| `name` | string | yes | Skill name (must match `frontmatter.name` in the actual skill). |
+| `description` | string | yes | One-line description shown in `skilltap find`. |
+| `repo` | string | yes | `owner/repo` shorthand, full git URL, or `npm:@scope/name`. |
+| `tags` | string[] | no | Category tags (default `[]`). |
+| `trust` | `TapTrust` | no | Verification metadata. |
+| `plugin` | boolean | no | `true` if this entry points at a plugin repo (vs a single-skill repo). Default `false`. |
 
 ### `TapTrust` fields
 
 | Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| `verified` | boolean | yes | Whether the tap maintainer has vetted this entry |
-| `verifiedBy` | string | no | Who curated it (name or handle) |
-| `verifiedAt` | string | no | ISO 8601 datetime of last verification |
+|---|---|---|---|
+| `verified` | boolean | yes | Whether the tap maintainer has vetted this entry. |
+| `verifiedBy` | string | no | Who curated it (name or handle). |
+| `verifiedAt` | string | no | ISO 8601 datetime of last verification. |
 
-When `verified: true`, the skill gets the `curated` trust tier on install. See [../skilltap-find/](../skilltap-find/) for trust tier details.
+When `verified: true`, the skill gets the `curated` trust tier on install. See [../skilltap-find/reference/trust.md](../../skilltap-find/reference/trust.md) for trust tier details.
 
 ### `TapPlugin` fields (inline plugin definitions)
 
+When you want the entire plugin definition to live inside the tap (instead of in a separate plugin repo), use `plugins[]`. Users install with `tap-name/plugin-name`.
+
 | Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| `name` | string | yes | Plugin name |
-| `description` | string | no | One-liner (default `""`) |
-| `version` | string | no | SemVer |
-| `skills` | `TapPluginSkill[]` | no | Skill entries (default `[]`) |
-| `mcpServers` | string \| object | no | Path string OR inline server map |
-| `agents` | `TapPluginAgent[]` | no | Agent definition entries (default `[]`) |
-| `tags` | string[] | no | Category tags (default `[]`) |
+|---|---|---|---|
+| `name` | string | yes | Plugin name. |
+| `description` | string | no (default `""`) | One-liner. |
+| `version` | string | no | SemVer. |
+| `skills` | `TapPluginSkill[]` | no (default `[]`) | Skill entries. |
+| `mcpServers` | string \| object | no | Path string OR inline server map. |
+| `agents` | `TapPluginAgent[]` | no (default `[]`) | Agent definition entries. |
+| `tags` | string[] | no (default `[]`) | Category tags. |
 
 ### `TapPluginSkill` fields
 
 | Field | Type | Required |
-|-------|------|----------|
+|---|---|---|
 | `name` | string | yes |
-| `path` | string | yes | Path relative to the plugin's install root |
+| `path` | string | yes — relative to the plugin's install root |
 | `description` | string | no (default `""`) |
 
 ### `TapPluginAgent` fields
 
 | Field | Type | Required |
-|-------|------|----------|
+|---|---|---|
 | `name` | string | yes |
-| `path` | string | yes | Path to the `.md` file, relative to install root |
+| `path` | string | yes — path to the `.md` file, relative to install root |
 
-## HTTP registry option
+## Marketplace fallback
 
-skilltap also supports HTTP registries as taps — a hosted endpoint that serves the same `tap.json` schema over HTTPS. Point users at the registry URL instead of a git repo. Refer to the skilltap docs for the HTTP registry API spec; it is not reproduced here.
+If you publish a Claude Code marketplace (`.claude-plugin/marketplace.json`) instead of a `tap.json`, skilltap will also adapt that to the internal `Tap` type when users add the repo as a tap. See [../../skilltap-find/reference/taps.md](../../skilltap-find/reference/taps.md) for the source-mapping table.
 
 ## Complete `tap.json` example
 
@@ -122,9 +128,7 @@ skilltap also supports HTTP registries as taps — a hosted endpoint that serves
       "description": "Community-contributed linting helpers",
       "repo": "someuser/linter-skill",
       "tags": ["linting"],
-      "trust": {
-        "verified": false
-      }
+      "trust": { "verified": false }
     }
   ],
   "plugins": [
@@ -157,10 +161,7 @@ skilltap also supports HTTP registries as taps — a hosted endpoint that serves
         }
       },
       "agents": [
-        {
-          "name": "deploy-agent",
-          "path": "agents/deploy-agent.md"
-        }
+        { "name": "deploy-agent", "path": "agents/deploy-agent.md" }
       ]
     }
   ]
@@ -169,9 +170,19 @@ skilltap also supports HTTP registries as taps — a hosted endpoint that serves
 
 ## Maintenance workflow
 
-1. Fork/clone your tap repo.
+1. Clone the tap repo.
 2. Add or update entries in `tap.json`.
 3. Set `trust.verified` and `trust.verifiedAt` after vetting each entry.
-4. Commit and push — consumers get updates next time they run `skilltap tap update`.
+4. Commit and push — consumers get updates on next `find` or `install` (taps are re-fetched on use when stale).
 
 To accept community submissions, open PRs against your tap repo. Review the linked skill repo, set `trust.verified: true` if satisfied, merge.
+
+## Distribution tip
+
+Once your tap is hosted, encourage users to add it via the GitHub shorthand form, which derives both name and URL:
+
+```bash
+skilltap tap add you/my-tap
+```
+
+Mention this in your repo README so the install command is one line.
